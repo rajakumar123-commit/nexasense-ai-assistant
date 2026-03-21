@@ -1,0 +1,175 @@
+# ============================================================
+# docker-compose.yml
+# NexaSense AI Assistant
+# ============================================================
+
+version: "3.9"
+
+services:
+
+  # ----------------------------------------------------------
+  # PostgreSQL
+  # ----------------------------------------------------------
+  postgres:
+    image: postgres:16
+    container_name: nexasense-postgres
+    restart: always
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: nexasense123
+      POSTGRES_DB: nexasense
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./schema.sql:/docker-entrypoint-initdb.d/schema.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d nexasense"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+
+  # ----------------------------------------------------------
+  # Redis (BullMQ queue + semantic cache)
+  # ----------------------------------------------------------
+  redis:
+    image: redis:7
+    container_name: nexasense-redis
+    restart: always
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+
+  # ----------------------------------------------------------
+  # Chroma Vector Database
+  # ----------------------------------------------------------
+  chroma:
+    image: chromadb/chroma
+    container_name: nexasense-chroma
+    restart: always
+    ports:
+      - "8000:8000"
+    volumes:
+      - chroma_data:/data
+
+
+  # ----------------------------------------------------------
+  # Backend API
+  # ----------------------------------------------------------
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: nexasense-backend
+    restart: always
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      chroma:
+        condition: service_started
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: postgresql://postgres:nexasense123@postgres:5432/nexasense
+      REDIS_URL: redis://redis:6379
+      CHROMA_URL: http://chroma:8000
+      TRANSFORMERS_BACKEND: wasm
+      TRANSFORMERS_OFFLINE: "0"
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./uploads:/app/uploads
+      - logs_data:/app/logs
+
+
+  # ----------------------------------------------------------
+  # BullMQ Worker
+  # ----------------------------------------------------------
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: nexasense-worker
+    restart: always
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      chroma:
+        condition: service_started
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: postgresql://postgres:nexasense123@postgres:5432/nexasense
+      REDIS_URL: redis://redis:6379
+      CHROMA_URL: http://chroma:8000
+      TRANSFORMERS_BACKEND: wasm
+      TRANSFORMERS_OFFLINE: "0"
+    volumes:
+      - ./uploads:/app/uploads
+      - logs_data:/app/logs
+    command: node src/workers/ingestion.worker.js
+
+
+  # ----------------------------------------------------------
+  # Frontend
+  # ----------------------------------------------------------
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: nexasense-frontend
+    restart: always
+    depends_on:
+      - backend
+    ports:
+      - "5173:80"
+
+
+  # ----------------------------------------------------------
+  # Test Runner
+  # ----------------------------------------------------------
+  test:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      chroma:
+        condition: service_started
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: postgresql://postgres:nexasense123@postgres:5432/nexasense
+      REDIS_URL: redis://redis:6379
+      CHROMA_URL: http://chroma:8000
+      NODE_ENV: test
+    volumes:
+      - ./uploads:/app/uploads
+    command: node tests/rag.test.js
+    profiles:
+      - test
+
+
+# ----------------------------------------------------------
+# Volumes
+# ----------------------------------------------------------
+volumes:
+  postgres_data:
+  chroma_data:
+  redis_data:
+  logs_data:
