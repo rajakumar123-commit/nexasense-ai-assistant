@@ -2,21 +2,49 @@
   "name": "nexasense",
   "version": "1.0.0",
   "main": "index.js",
- "scripts": {
-  "dev": "nodemon src/server.js",
-  "start": "node src/server.js"
-},
+  "scripts": {
+    "dev": "nodemon src/server.js",
+    "start": "node src/server.js",
+    "worker": "node src/workers/ingestion.worker.js"
+  },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "description": "",
   "dependencies": {
+    "@chroma-core/default-embed": "^0.1.9",
+    "@google/generative-ai": "^0.24.1",
+    "@xenova/transformers": "^2.17.2",
+    "bcrypt": "^6.0.0",
+    "bullmq": "^5.71.0",
+    "chromadb": "^3.3.1",
+    "compression": "^1.8.1",
     "cors": "^2.8.6",
-    "express": "^5.2.1",
+    "dictionary-en": "^4.0.0",
+    "dotenv": "^17.3.1",
+    "eventsource-parser": "^3.0.6",
+    "express": "^4.18.2",
+    "express-rate-limit": "^8.3.0",
+    "gpt-3-encoder": "^1.1.4",
+    "groq-sdk": "^0.37.0",
+    "helmet": "^8.1.0",
+    "ioredis": "^5.10.0",
+    "jsonwebtoken": "^9.0.3",
+    "morgan": "^1.10.1",
     "multer": "^2.1.1",
-    "pdf-parse": "^2.4.5"
+    "node-cache": "^5.1.2",
+    "nspell": "^2.1.5",
+    "openai": "^6.27.0",
+    "pdf-parse": "^1.1.1",
+    "pdfkit": "^0.17.2",
+    "pg": "^8.20.0",
+    "winston": "^3.19.0",
+    "zod": "^4.3.6"
   },
   "devDependencies": {
-    "nodemon": "^3.1.14"
+    "autoprefixer": "^10.4.27",
+    "nodemon": "^3.1.14",
+    "postcss": "^8.5.8",
+    "tailwindcss": "^4.2.1"
   }
 }
