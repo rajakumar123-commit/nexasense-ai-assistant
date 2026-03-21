@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+  <!-- Title -->
+
+  <title>NexaSense — AI Document Assistant</title>
+
+  <!-- SEO -->
+
+  <meta name="description" content="NexaSense AI — Intelligent document assistant powered by retrieval augmented generation." />
+
+  <!-- Theme color -->
+
+  <meta name="theme-color" content="#07070f" />
+
+  <!-- Fonts (matches Tailwind config) -->
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+
+  <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700&family=DM+Sans:wght@400;500;600&family=Fira+Code:wght@400;500&display=swap" rel="stylesheet">
+
+  <!-- Prevent dark mode flicker -->
+
+  <script>
+    const theme = localStorage.getItem("theme");
+    if (theme === "dark") {
+      document.documentElement.classList.add("dark");
+    }
+  </script>
+
+</head>
+
+<body class="bg-bg-primary text-text-primary font-body antialiased">
+
+  <div id="root"></div>
+
+  <script type="module" src="/src/main.jsx"></script>
+
+</body>
+
+</html>

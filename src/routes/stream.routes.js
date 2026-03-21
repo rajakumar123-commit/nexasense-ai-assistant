@@ -1,26 +1,23 @@
 // ============================================================
-// Query Routes
-// NexaSense AI Assistant v2.0
+// Stream Routes
+// NexaSense AI Assistant
 // ============================================================
 
 const express = require("express");
 const router = express.Router();
 
-const { queryDocument } = require("../controllers/query.controller");
+const { streamQuery } = require("../controllers/queryStream.controller");
 
 const authMiddleware = require("../middleware/auth.middleware");
 const rateLimitMiddleware = require("../middleware/rateLimit.middleware");
 
 
-// ------------------------------------------------------------
-// POST /api/query
-// ------------------------------------------------------------
-
+// POST /api/query/stream
 router.post(
-  "/query",
+  "/query/stream",
   authMiddleware,
   rateLimitMiddleware,
-  queryDocument
+  streamQuery
 );
 
 module.exports = router;

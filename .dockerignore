@@ -1,0 +1,65 @@
+# -------------------------
+# Node modules
+# -------------------------
+node_modules
+frontend/node_modules
+
+# -------------------------
+# Build output
+# -------------------------
+dist
+build
+frontend/dist
+
+# -------------------------
+# Environment files
+# -------------------------
+.env
+.env.local
+
+# -------------------------
+# Git
+# -------------------------
+.git
+.gitignore
+
+# -------------------------
+# Logs
+# -------------------------
+logs
+*.log
+npm-debug.log
+
+# -------------------------
+# Uploads
+# -------------------------
+uploads
+
+# -------------------------
+# Python environments
+# -------------------------
+venv
+chroma_env
+__pycache__
+
+# -------------------------
+# Editor files
+# -------------------------
+.vscode
+.idea
+
+# -------------------------
+# System files
+# -------------------------
+.DS_Store
+Thumbs.db
+
+# -------------------------
+# Temp files
+# -------------------------
+*.tmp
+*.cache
+coverage
+
+Dockerfile
+docker-compose.yml

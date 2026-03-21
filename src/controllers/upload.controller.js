@@ -1,106 +1,175 @@
-const fs   = require("fs");
-const { pool } = require("../db");
-const { extractText }         = require("../services/document.service");
-const recursiveChunk          = require("../utils/recursiveChunk");
-const { embedAndStoreChunks } = require("../services/embedder.service");
+// ============================================================
+// Upload Controller
+// NexaSense AI Assistant
+// Handles POST /api/upload
+// Uses BullMQ ingestion queue
+// ============================================================
+
+const fs = require("fs");
+const path = require("path");
+
+const db = require("../db");
+const logger = require("../utils/logger");
+
 const { addIngestionJob } = require("../queue/ingestion.queue");
+
+
+// ------------------------------------------------------------
+// Allowed file types
+// ------------------------------------------------------------
+
+const ALLOWED_TYPES = [
+  "application/pdf"
+];
+
+
+// ============================================================
+// POST /api/upload
+// ============================================================
+
 async function uploadFile(req, res) {
 
-  if (!req.file) {
-    return res.status(400).json({ success: false, error: "No file uploaded" });
-  }
-
-  const filePath     = req.file.path;
-  const originalName = req.file.originalname;
-  const storedName   = req.file.filename;
-
-  // Temp userId for testing — replace with req.user.id after auth is built
-  const userId = req.user?.id || "493345bd-f590-4327-8395-4b049823a702";
-
-  const client = await pool.connect();
-  let documentId;
+  const start = Date.now();
 
   try {
-    await client.query("BEGIN");
 
-    // Step 1: Insert document record
-    const { rows } = await client.query(
-      `INSERT INTO documents (user_id, original_name, filename, status)
-       VALUES ($1, $2, $3, 'processing') RETURNING id`,
-      [userId, originalName, storedName]
-    );
-    documentId = rows[0].id;
-
-    // CRITICAL: Commit document BEFORE inserting chunks
-    // chunks table has foreign key to documents.id
-    // If document is not committed, chunks insert fails with FK violation
-    await client.query("COMMIT");
-
-    // Step 2: Extract text from PDF
-    const { text, pageCount } = await extractText(filePath);
-
-    if (!text || text.trim().length === 0) {
-      throw new Error("No text could be extracted from this PDF");
+    if (!req.file) {
+      return res.status(400).json({
+        success: false,
+        error: "No file uploaded"
+      });
     }
 
-    // Step 3: Chunk the text
-    const rawChunks = recursiveChunk(text);
+    const {
+      path: filePath,
+      originalname,
+      mimetype,
+      size
+    } = req.file;
 
-    if (!rawChunks.length) {
-      throw new Error("Chunking produced no results");
+    const userId = req.user?.id;
+
+    // ---------------------------------------------------------
+    // Validate file type
+    // ---------------------------------------------------------
+
+    if (!ALLOWED_TYPES.includes(mimetype)) {
+
+      fs.unlink(filePath, () => {});
+
+      return res.status(400).json({
+        success: false,
+        error: "Only PDF files are allowed"
+      });
+
     }
 
-    const chunks = rawChunks.map((content, index) => ({
-      content,
-      pageNumber: 1,
-      chunkIndex: index
-    }));
 
-    console.log(`Chunks created: ${chunks.length}`);
+    // ---------------------------------------------------------
+    // Insert document metadata
+    // ---------------------------------------------------------
 
-    // Step 4: Embed chunks + store in Chroma + PostgreSQL
-    addIngestionJob({
-  documentId,
-  filePath
-});
-
-    // Step 5: Update page count on document
-    await pool.query(
-      "UPDATE documents SET page_count = $1 WHERE id = $2",
-      [pageCount, documentId]
+    const { rows } = await db.query(
+      `INSERT INTO documents
+       (user_id, file_name, file_size, status)
+       VALUES ($1,$2,$3,'uploading')
+       RETURNING id`,
+      [
+        userId,
+        originalname,
+        size || 0
+      ]
     );
 
-    res.status(200).json({
-      success:     true,
+    const documentId = rows[0].id;
+
+
+    logger.info(
+      `[Upload] Document created | doc:${documentId} | user:${userId}`
+    );
+
+
+    // ---------------------------------------------------------
+    // Queue ingestion job
+    // ---------------------------------------------------------
+
+    try {
+
+      await addIngestionJob({
+        documentId,
+        filePath,
+        userId
+      });
+
+    }
+
+    catch (queueError) {
+
+      logger.error(
+        `[Upload] Queue push failed | doc:${documentId} | ${queueError.message}`
+      );
+
+      await db.query(
+        `UPDATE documents
+         SET status='error',
+             error_msg=$1
+         WHERE id=$2`,
+        [
+          "Queue ingestion failed",
+          documentId
+        ]
+      );
+
+      fs.unlink(filePath, () => {});
+
+      return res.status(500).json({
+        success: false,
+        error: "Failed to queue document for processing"
+      });
+
+    }
+
+
+    // ---------------------------------------------------------
+    // Success response
+    // ---------------------------------------------------------
+
+    return res.status(200).json({
+
+      success: true,
+
       documentId,
-      filename:    originalName,
-      pageCount,
-      totalChunks: chunks.length,
-      message:     "Document processed successfully"
+
+      fileName: originalname,
+
+      status: "processing",
+
+      message: "Document uploaded successfully. Processing in background.",
+
+      responseTimeMs: Date.now() - start
+
     });
 
-  } catch (error) {
-    // If document was already committed, mark it as failed
-    if (documentId) {
-      await pool.query(
-        "UPDATE documents SET status = 'failed' WHERE id = $1",
-        [documentId]
-      );
-    } else {
-      try { await client.query("ROLLBACK"); } catch (_) {}
+  }
+
+  catch (error) {
+
+    logger.error("[Upload] Fatal:", error.message);
+
+    if (req.file?.path && fs.existsSync(req.file.path)) {
+      fs.unlink(req.file.path, () => {});
     }
 
-    console.error("[UploadController] Error:", error.message);
-    res.status(500).json({
+    return res.status(500).json({
       success: false,
-      error:   "Document processing failed",
+      error: "Upload failed",
       details: error.message
     });
 
-  } finally {
-    client.release();
-    if (fs.existsSync(filePath)) fs.unlink(filePath, () => {});
   }
+
 }
 
-module.exports = { uploadFile };
+module.exports = {
+  uploadFile
+};

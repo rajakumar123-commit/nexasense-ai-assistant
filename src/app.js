@@ -1,72 +1,187 @@
+// ============================================================
+// app.js
+// NexaSense AI Assistant v2.1
+// Production-ready Express server
+// ============================================================
+
 const express = require("express");
 const cors = require("cors");
 const morgan = require("morgan");
 const rateLimit = require("express-rate-limit");
+const helmet = require("helmet");
+const compression = require("compression");
+
 const logger = require("./utils/logger");
-const conversationRoutes = require("./routes/conversation.routes");
+
+// Routes
+const authRoutes = require("./routes/auth.routes");
+const dashboardRoutes = require("./routes/dashboard.routes");
 const uploadRoutes = require("./routes/upload.routes");
 const queryRoutes = require("./routes/query.routes");
 const documentRoutes = require("./routes/document.routes");
+const conversationRoutes = require("./routes/conversation.routes");
+const streamRoutes = require("./routes/stream.routes");
 
 const app = express();
-app.use(cors());
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
 
-app.use(express.urlencoded({ extended: true }));
+// ============================================================
+// Trust proxy (important for Docker / nginx)
+// ============================================================
 
+app.set("trust proxy", 1);
 
-// HTTP request logging
+// ============================================================
+// Security middleware
+// ============================================================
+
+app.use(helmet());
+
+// ============================================================
+// Compression
+// ============================================================
+
+// Compress all responses before sending (excluding SSE)
+app.use(compression({
+  filter: (req, res) => {
+    if (req.headers["accept"] === "text/event-stream") {
+      return false; // Do not compress SSE streams
+    }
+    return compression.filter(req, res);
+  }
+}));
+
+// ============================================================
+// CORS
+// ============================================================
+
 app.use(
-  morgan("combined", {
-    stream: {
-      write: (message) => logger.info(message.trim()),
-    },
+  cors({
+    origin: process.env.FRONTEND_URL || "*",
+    methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allowedHeaders: ["Content-Type", "Authorization"],
+    credentials: true
   })
 );
 
+// ============================================================
+// Body Parsers
+// ============================================================
 
-// ─────────────────────────────
-// Routes
-// ─────────────────────────────
-app.use("/api/upload", uploadRoutes);
-app.use("/api", queryRoutes);
-app.use("/api", documentRoutes);
-app.use("/api", conversationRoutes);
+app.use(express.json({ limit: "50mb" }));
+app.use(express.urlencoded({ extended: true, limit: "50mb" }));
 
-// ─────────────────────────────
-// Health check
-// ─────────────────────────────
+// ============================================================
+// HTTP Logging
+// ============================================================
+
+app.use(
+  morgan("combined", {
+    stream: {
+      write: msg => logger.info(msg.trim())
+    }
+  })
+);
+
+// ============================================================
+// Global Rate Limiter
+// ============================================================
+
+const globalLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 1000,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: {
+    success: false,
+    error: "Too many requests. Please slow down."
+  }
+});
+
+app.use(globalLimiter);
+
+// ============================================================
+// Auth Rate Limiter
+// ============================================================
+
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 20,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: {
+    success: false,
+    error: "Too many auth attempts. Try again later."
+  }
+});
+
+// ============================================================
+// Health Endpoints
+// ============================================================
+
 app.get("/", (req, res) => {
   res.json({
     status: "ok",
     service: "NexaSense API",
-    message: "RAG server running"
+    version: "2.1.0",
+    message: "RAG AI assistant server running"
   });
 });
 
+app.get("/api/health", (req, res) => {
+  res.json({
+    status: "ok",
+    timestamp: new Date().toISOString(),
+    uptime: Math.floor(process.uptime()) + "s"
+  });
+});
 
-// ─────────────────────────────
-// 404 handler
-// ─────────────────────────────
+// ============================================================
+// API Routes
+// ============================================================
+
+// Authentication (public)
+app.use("/api/auth", authLimiter, authRoutes);
+
+// Documents
+app.use("/api", documentRoutes);
+
+// Upload
+app.use("/api/upload", uploadRoutes);
+
+// Queries
+app.use("/api", queryRoutes);
+
+// Streaming
+app.use("/api", streamRoutes);
+
+// Conversations
+app.use("/api", conversationRoutes);
+
+// Dashboard
+app.use("/api/dashboard", dashboardRoutes);
+
+// ============================================================
+// 404 Handler
+// ============================================================
+
 app.use((req, res) => {
   res.status(404).json({
-    error: "Route not found"
+    success: false,
+    error: `Route not found: ${req.method} ${req.originalUrl}`
   });
 });
 
+// ============================================================
+// Global Error Handler
+// ============================================================
 
-// ─────────────────────────────
-// Global error handler
-// ─────────────────────────────
 app.use((err, req, res, next) => {
+  logger.error("[App] Unhandled error:", err.stack || err.message);
 
-  logger.error(err.stack || err.message);
-
-  res.status(500).json({
+  res.status(err.status || 500).json({
+    success: false,
     error: err.message || "Internal server error"
   });
-
 });
 
 module.exports = app;

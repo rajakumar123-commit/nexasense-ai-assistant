@@ -1,95 +1,234 @@
+// ============================================================
+// Conversation Routes
+// NexaSense AI Assistant v2.0
+// ============================================================
+
 const express = require("express");
 const router = express.Router();
+const authMiddleware = require("../middleware/auth.middleware");
+const db = require("../db");
+const logger = require("../utils/logger");
 
-const {
-  createConversation,
-  getUserConversations,
-  getConversationDetail,
-  deleteConversation
-} = require("../services/conversation.service");
+router.use(authMiddleware);
 
-// create new conversation
-router.post("/conversations", async (req, res) => {
+
+// ─────────────────────────────────────────
+// Helper: UUID validation
+// ─────────────────────────────────────────
+function isUUID(value) {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
+}
+
+
+// ------------------------------------------------------------
+// GET /api/conversations
+// ------------------------------------------------------------
+router.get("/conversations", async (req, res) => {
 
   try {
 
-    const { userId, documentId } = req.body;
+    const userId = req.user.id;
 
-    if (!userId || !documentId) {
+    const { rows } = await db.query(
+      `
+      SELECT id, document_id, question, answer, sources, metadata, created_at
+      FROM conversations
+      WHERE user_id = $1
+      ORDER BY created_at DESC
+      LIMIT 100
+      `,
+      [userId]
+    );
 
+    const conversations = rows.map(r => ({
+      ...r,
+      sources: r.sources || [],
+      metadata: r.metadata || {}
+    }));
+
+    return res.json({
+      success: true,
+      count: conversations.length,
+      conversations
+    });
+
+  } catch (error) {
+
+    logger.error("[Conversations] list error:", error);
+
+    return res.status(500).json({
+      success: false,
+      error: "Failed to fetch conversations"
+    });
+
+  }
+
+});
+
+
+// ------------------------------------------------------------
+// GET /api/conversations/document/:documentId
+// ------------------------------------------------------------
+router.get("/conversations/document/:documentId", async (req, res) => {
+
+  try {
+
+    const userId = req.user.id;
+    const { documentId } = req.params;
+
+    if (!isUUID(documentId)) {
       return res.status(400).json({
-        error: "userId and documentId are required"
+        success: false,
+        error: "Invalid document ID"
       });
     }
 
-    const conversation = await createConversation(userId, documentId);
+    const { rows } = await db.query(
+      `
+      SELECT id, document_id, question, answer, sources, metadata, created_at
+      FROM conversations
+      WHERE user_id = $1 AND document_id = $2
+      ORDER BY created_at ASC
+      LIMIT 200
+      `,
+      [userId, documentId]
+    );
 
-    res.json(conversation);
+    const conversations = rows.map(r => ({
+      ...r,
+      sources: r.sources || [],
+      metadata: r.metadata || {}
+    }));
+
+    return res.json({
+      success: true,
+      count: conversations.length,
+      conversations
+    });
 
   } catch (error) {
 
-    console.error("[ConversationRoute]", error.message);
+    logger.error("[Conversations] document list error:", error);
 
-    res.status(500).json({
-      error: "Failed to create conversation"
+    return res.status(500).json({
+      success: false,
+      error: "Failed to fetch conversations for document"
     });
+
   }
+
 });
 
-// get all conversations of a user
-router.get("/conversations/:userId", async (req, res) => {
+
+// ------------------------------------------------------------
+// GET /api/conversations/:id
+// ------------------------------------------------------------
+router.get("/conversations/:id", async (req, res) => {
 
   try {
 
-    const conversations = await getUserConversations(req.params.userId);
+    const userId = req.user.id;
+    const { id } = req.params;
 
-    res.json(conversations);
-
-  } catch (error) {
-
-    res.status(500).json({
-      error: "Failed to fetch conversations"
-    });
-  }
-});
-
-// get full conversation
-router.get("/conversation/:id", async (req, res) => {
-
-  try {
-
-    const conversation = await getConversationDetail(req.params.id);
-
-    if (!conversation) {
-
-      return res.status(404).json({ error: "Conversation not found" });
+    if (!isUUID(id)) {
+      return res.status(400).json({
+        success: false,
+        error: "Invalid conversation ID"
+      });
     }
 
-    res.json(conversation);
+    const { rows } = await db.query(
+      `
+      SELECT id, document_id, question, answer, sources, metadata, created_at
+      FROM conversations
+      WHERE id = $1 AND user_id = $2
+      `,
+      [id, userId]
+    );
+
+    if (!rows.length) {
+      return res.status(404).json({
+        success: false,
+        error: "Conversation not found"
+      });
+    }
+
+    const conversation = {
+      ...rows[0],
+      sources: rows[0].sources || [],
+      metadata: rows[0].metadata || {}
+    };
+
+    return res.json({
+      success: true,
+      conversation
+    });
 
   } catch (error) {
 
-    res.status(500).json({
+    logger.error("[Conversations] detail error:", error);
+
+    return res.status(500).json({
+      success: false,
       error: "Failed to fetch conversation"
     });
+
   }
+
 });
 
-// delete conversation
-router.delete("/conversation/:id", async (req, res) => {
+
+// ------------------------------------------------------------
+// DELETE /api/conversations/:id
+// ------------------------------------------------------------
+router.delete("/conversations/:id", async (req, res) => {
 
   try {
 
-    await deleteConversation(req.params.id);
+    const userId = req.user.id;
+    const { id } = req.params;
 
-    res.json({ success: true });
+    if (!isUUID(id)) {
+      return res.status(400).json({
+        success: false,
+        error: "Invalid conversation ID"
+      });
+    }
+
+    const result = await db.query(
+      `
+      DELETE FROM conversations
+      WHERE id = $1 AND user_id = $2
+      `,
+      [id, userId]
+    );
+
+    if (!result.rowCount) {
+      return res.status(404).json({
+        success: false,
+        error: "Conversation not found"
+      });
+    }
+
+    logger.info(`[Conversations] Deleted ${id}`);
+
+    return res.json({
+      success: true,
+      message: "Conversation deleted"
+    });
 
   } catch (error) {
 
-    res.status(500).json({
+    logger.error("[Conversations] delete error:", error);
+
+    return res.status(500).json({
+      success: false,
       error: "Failed to delete conversation"
     });
+
   }
+
 });
+
 
 module.exports = router;

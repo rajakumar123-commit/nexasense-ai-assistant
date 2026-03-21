@@ -1,90 +1,139 @@
-const { embedAndStoreChunks } = require("../services/embedder.service");
-const { extractText } = require("../services/document.service");
-const recursiveChunk = require("../utils/recursiveChunk");
+// ============================================================
+// BullMQ Ingestion Queue
+// NexaSense AI Assistant
+// Production-ready ingestion queue
+// ============================================================
 
-const { pool } = require("../db");
+const { Queue } = require("bullmq");
+const connection = require("../config/redis");
+const logger = require("../utils/logger");
 
-// simple in-memory queue
-const ingestionQueue = [];
-
-let isProcessing = false;
-
-
-// ─────────────────────────────
-// Add job to queue
-// ─────────────────────────────
-function addIngestionJob({ documentId, filePath }) {
-
-  ingestionQueue.push({
-    documentId,
-    filePath
-  });
-
-  processQueue();
-}
+const QUEUE_NAME = "document-ingestion";
 
 
-// ─────────────────────────────
-// Process queue
-// ─────────────────────────────
-async function processQueue() {
+// ------------------------------------------------------------
+// Queue instance
+// ------------------------------------------------------------
 
-  if (isProcessing) return;
+const ingestionQueue = new Queue(QUEUE_NAME, {
 
-  isProcessing = true;
+  connection,
 
-  while (ingestionQueue.length > 0) {
+  defaultJobOptions: {
 
-    const job = ingestionQueue.shift();
+    attempts: 3,
 
-    try {
+    removeOnComplete: {
+      age: 3600,   // keep successful jobs for 1 hour
+      count: 1000
+    },
 
-      console.log(`[Queue] Processing document ${job.documentId}`);
+    removeOnFail: {
+      age: 86400   // keep failed jobs for 24h
+    },
 
-      // 1️⃣ Extract text from PDF
-      const { text } = await extractText(job.filePath);
-
-      // 2️⃣ Chunk the text
-      const rawChunks = recursiveChunk(text);
-
-      const chunks = rawChunks.map((content, index) => ({
-        content,
-        pageNumber: 1,
-        chunkIndex: index
-      }));
-
-      console.log(`[Queue] Created ${chunks.length} chunks`);
-
-      // 3️⃣ Embed and store
-      await embedAndStoreChunks(job.documentId, chunks);
-
-      // 4️⃣ Update document status
-      await pool.query(
-        `UPDATE documents SET status='ready' WHERE id=$1`,
-        [job.documentId]
-      );
-
-      console.log(`[Queue] Completed document ${job.documentId}`);
-
-    }
-
-    catch (error) {
-
-      console.error("[Queue] Failed:", error.message);
-
-      await pool.query(
-        `UPDATE documents SET status='failed' WHERE id=$1`,
-        [job.documentId]
-      );
-
+    backoff: {
+      type: "exponential",
+      delay: 3000
     }
 
   }
 
-  isProcessing = false;
+});
+
+
+// ------------------------------------------------------------
+// Add ingestion job
+// ------------------------------------------------------------
+
+async function addIngestionJob({ documentId, filePath, userId }) {
+
+  if (!documentId || !filePath) {
+    throw new Error("Invalid ingestion job payload");
+  }
+
+  try {
+
+    const job = await ingestionQueue.add(
+
+      "process-document",
+
+      {
+        documentId,
+        filePath,
+        userId
+      },
+
+      {
+        priority: 2
+      }
+
+    );
+
+    logger.info(
+      `[Queue] Job added | jobId=${job.id} | doc=${documentId}`
+    );
+
+    return job.id;
+
+  }
+
+  catch (error) {
+
+    logger.error(
+      `[Queue] Failed to enqueue job | doc=${documentId} | ${error.message}`
+    );
+
+    throw error;
+
+  }
+
+}
+
+
+// ------------------------------------------------------------
+// Optional queue monitoring
+// ------------------------------------------------------------
+
+async function getQueueStatus() {
+
+  try {
+
+    const waiting = await ingestionQueue.getWaitingCount();
+    const active = await ingestionQueue.getActiveCount();
+    const completed = await ingestionQueue.getCompletedCount();
+    const failed = await ingestionQueue.getFailedCount();
+
+    return {
+
+      waiting,
+      active,
+      completed,
+      failed
+
+    };
+
+  }
+
+  catch (err) {
+
+    logger.error("[Queue] Status check failed:", err.message);
+
+    return {
+      waiting: 0,
+      active: 0,
+      completed: 0,
+      failed: 0
+    };
+
+  }
+
 }
 
 
 module.exports = {
-  addIngestionJob
+
+  addIngestionJob,
+  getQueueStatus
+
 };
