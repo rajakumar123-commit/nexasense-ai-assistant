@@ -1,51 +1,68 @@
+// ============================================================
+// reranker.service.js
+// NexaSense AI Assistant
+// Semantic reranking of retrieved chunks
+// FIX: Uses sharedEmbedder instead of its own duplicate model
+// FIX: Replaced console.log with logger
+// ============================================================
 
-const { pipeline } = require("@xenova/transformers");
+const { embedSingle } = require("./sharedEmbedder");
+const logger          = require("../utils/logger");
 
-let reranker = null;
 
-async function getReranker() {
-  if (!reranker) {
-    console.log("[Reranker] Loading reranker model...");
-    reranker = await pipeline(
-      "feature-extraction",
-      "Xenova/all-MiniLM-L6-v2"
-    );
-    console.log("[Reranker] Model loaded");
-  }
-  return reranker;
-}
+// ------------------------------------------------------------
+// Cosine similarity
+// ------------------------------------------------------------
 
 function cosineSimilarity(a, b) {
   let dot = 0, normA = 0, normB = 0;
+
   for (let i = 0; i < a.length; i++) {
-    dot += a[i] * b[i];
+    dot   += a[i] * b[i];
     normA += a[i] * a[i];
     normB += b[i] * b[i];
   }
+
   const denom = Math.sqrt(normA) * Math.sqrt(normB);
   return denom === 0 ? 0 : dot / denom;
 }
 
-async function embed(text, model) {
-  const output = await model(text, { pooling: "mean", normalize: true });
-  return Array.from(output.data);
-}
+
+// ------------------------------------------------------------
+// Rerank chunks by semantic similarity to the query
+// ------------------------------------------------------------
 
 async function rerankChunks(query, chunks) {
-  if (!chunks.length) return [];
 
-  const model = await getReranker();
-  const queryVector = await embed(query, model);
-  const scored = [];
+  if (!chunks || chunks.length === 0) return [];
 
-  for (const chunk of chunks) {
-    const chunkVector = await embed(chunk.content, model);
-    const score = cosineSimilarity(queryVector, chunkVector);
-    scored.push({ ...chunk, rerankScore: score });
+  try {
+
+    const queryVector = await embedSingle(query);
+
+    // Embed all chunks in parallel
+    const chunkVectors = await Promise.all(
+      chunks.map(chunk => embedSingle(chunk.content))
+    );
+
+    const scoredChunks = chunks.map((chunk, index) => ({
+      ...chunk,
+      rerankScore: cosineSimilarity(queryVector, chunkVectors[index])
+    }));
+
+    // Sort highest similarity first
+    scoredChunks.sort((a, b) => b.rerankScore - a.rerankScore);
+
+    return scoredChunks;
+
+  } catch (err) {
+
+    logger.warn("[Reranker] Failed, returning original order:", err.message);
+    return chunks;
+
   }
 
-  scored.sort((a, b) => b.rerankScore - a.rerankScore);
-  return scored;
 }
+
 
 module.exports = { rerankChunks };

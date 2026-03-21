@@ -1,156 +1,146 @@
-const { pipeline } = require("@xenova/transformers");
-const { pool } = require("../db");
-const chroma = require("../config/chroma");
+// ============================================================
+// Embedder Service
+// NexaSense AI Assistant
+// Production Optimized (Batch Embeddings + Bulk Insert)
+// FIX: Uses sharedEmbedder to avoid loading the model twice
+//      (once in embedder + once in vectorSearch)
+// FIX: Removed unnecessary BEGIN/COMMIT transaction wrapping
+//      read-only chunk lookups + ChromaDB writes
+// ============================================================
 
-const EMBEDDING_DIMENSION = 384;
-const BATCH_SIZE = 10;
+const { embedTexts }  = require("./sharedEmbedder");
+const db              = require("../db");
+const chroma          = require("../config/chroma");
+const logger          = require("../utils/logger");
 
-let embedder = null;
+const BATCH_SIZE = 8;   // Smaller batches for WASM stability
 
-// Load embedding model once
-async function getEmbedder() {
-  if (!embedder) {
-    console.log("[Embedder] Loading embedding model...");
-    embedder = await pipeline(
-      "feature-extraction",
-      "Xenova/all-MiniLM-L6-v2"
-    );
-    console.log("[Embedder] Model loaded");
-  }
-  return embedder;
-}
 
-// Convert text → vector
-async function embedText(text) {
-  const model = await getEmbedder();
+// ------------------------------------------------------------
+// Get (or create) the Chroma collection for a document
+// Collection naming convention: doc_<uuid_with_underscores>
+// MUST match the name used by vectorSearch.service.js
+// ------------------------------------------------------------
 
-  const output = await model(text, {
-    pooling: "mean",
-    normalize: true
-  });
-
-  const embedding = Array.from(output.data);
-
-  if (!embedding || embedding.length !== EMBEDDING_DIMENSION) {
-    throw new Error(
-      `Invalid embedding: expected ${EMBEDDING_DIMENSION}, got ${embedding?.length}`
-    );
-  }
-
-  return embedding;
-}
-
-// Get Chroma collection
 async function getCollection(documentId) {
   const name = `doc_${documentId.replace(/-/g, "_")}`;
 
-  return await chroma.getOrCreateCollection({
+  return chroma.getOrCreateCollection({
     name,
-    metadata: { documentId },
-    embeddingFunction: null
+    metadata: { documentId }
   });
 }
 
-// Embed chunks and store
+
+// ------------------------------------------------------------
+// Embed and store document chunks
+// Saves vectors to ChromaDB; chunk records already exist in PG
+// ------------------------------------------------------------
+
 async function embedAndStoreChunks(documentId, chunks) {
 
-  console.log(`[Embedder] Embedding ${chunks.length} chunks`);
+  if (!chunks || chunks.length === 0) {
+    throw new Error("No chunks provided for embedding");
+  }
+
+  logger.info(`[Embedder] Processing ${chunks.length} chunks for ${documentId}`);
 
   const collection = await getCollection(documentId);
-  const client = await pool.connect();
+
+  const client = await db.pool.connect();
 
   try {
 
-    await client.query("BEGIN");
-
     for (let i = 0; i < chunks.length; i += BATCH_SIZE) {
 
-      const batch = chunks.slice(i, i + BATCH_SIZE);
+      const batch      = chunks.slice(i, i + BATCH_SIZE);
+      const batchIndex = Math.floor(i / BATCH_SIZE) + 1;
+      const totalBatches = Math.ceil(chunks.length / BATCH_SIZE);
 
-      console.log(
-        `[Embedder] Batch ${Math.floor(i / BATCH_SIZE) + 1}/` +
-        `${Math.ceil(chunks.length / BATCH_SIZE)}`
+      logger.info(`[Embedder] Batch ${batchIndex}/${totalBatches}`);
+
+      const texts = batch.map(c => c.content);
+
+      // ---------- Batch Embedding ----------
+      const embeddings = await embedTexts(texts);
+
+      // ---------- Fetch chunk IDs already inserted by worker ----------
+      const chunkIndexes = batch.map(c => c.chunk_index);
+
+      const { rows: chunkRows } = await client.query(
+        `SELECT id, chunk_index FROM chunks
+         WHERE document_id = $1
+           AND chunk_index = ANY($2::int[])
+         ORDER BY chunk_index`,
+        [documentId, chunkIndexes]
       );
 
-      const embeddings = [];
+      // Build a map: chunk_index → id
+      const indexToId = {};
+      chunkRows.forEach(r => { indexToId[r.chunk_index] = r.id; });
 
-      for (const chunk of batch) {
-        const embedding = await embedText(chunk.content);
-        embeddings.push(embedding);
+      const chunkIds = batch.map(c => indexToId[c.chunk_index]).filter(Boolean);
+
+      if (chunkIds.length === 0) {
+        logger.warn(`[Embedder] No chunk IDs found for batch ${batchIndex}. Skipping vector store.`);
+        continue;
       }
 
-      const chunkIds = [];
-
-      for (let j = 0; j < batch.length; j++) {
-
-        const chunk = batch[j];
-
-        const { rows } = await client.query(
-          `INSERT INTO chunks (document_id, content, chunk_index, page_number)
-           VALUES ($1,$2,$3,$4)
-           RETURNING id`,
-          [documentId, chunk.content, i + j, chunk.pageNumber || 1]
-        );
-
-        chunkIds.push(rows[0].id);
-      }
-
+      // ---------- Store Vectors in Chroma ----------
       await collection.add({
-        ids: chunkIds,
-        embeddings,
-        documents: batch.map(c => c.content),
-        metadatas: batch.map((c, j) => ({
+        ids:        chunkIds,
+        embeddings: embeddings.slice(0, chunkIds.length),
+        documents:  texts.slice(0, chunkIds.length),
+        metadatas:  chunkIds.map((id, j) => ({
           documentId,
-          chunkIndex: i + j,
-          pageNumber: c.pageNumber || 1,
-          chunkId: chunkIds[j]
+          chunkIndex: batch[j].chunk_index,
+          chunkId:    id
         }))
       });
 
-      console.log(`[Embedder] Stored batch ${Math.floor(i / BATCH_SIZE) + 1}`);
+      logger.info(`[Embedder] Stored batch ${batchIndex}/${totalBatches} in ChromaDB`);
+
     }
 
-    await client.query(
-      "UPDATE documents SET status='ready' WHERE id=$1",
-      [documentId]
-    );
-
-    await client.query("COMMIT");
-
-    console.log(`[Embedder] All ${chunks.length} chunks stored`);
+    logger.info(`[Embedder] Completed embedding for ${documentId}`);
 
   } catch (error) {
 
-    await client.query("ROLLBACK");
-
-    await pool.query(
-      "UPDATE documents SET status='failed' WHERE id=$1",
-      [documentId]
-    );
-
-    console.error("[Embedder] Failed:", error.message);
-
+    logger.error("[Embedder] Failed:", error.message);
     throw error;
 
   } finally {
+
     client.release();
+
   }
+
 }
+
+
+// ------------------------------------------------------------
+// Delete vectors for document (called on document delete)
+// ------------------------------------------------------------
 
 async function deleteDocumentVectors(documentId) {
 
   const name = `doc_${documentId.replace(/-/g, "_")}`;
 
   try {
+
     await chroma.deleteCollection({ name });
-    console.log(`[Embedder] Deleted collection ${name}`);
+    logger.info(`[Embedder] Deleted collection ${name}`);
+
   } catch (err) {
-    console.error("[Embedder] Delete failed:", err.message);
+
+    logger.warn("[Embedder] Delete collection failed:", err.message);
+
   }
+
 }
 
+
 module.exports = {
-  embedText,
   embedAndStoreChunks,
   getCollection,
   deleteDocumentVectors
