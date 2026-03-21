@@ -1,47 +1,74 @@
-const Groq = require("groq-sdk");
+// ============================================================
+// queryRewrite.service.js
+// NexaSense AI Assistant
+// FIX: Create Groq client lazily (inside function) so that
+//      dotenv.config() has time to run before reading GROQ_API_KEY.
+//      The original code created the client at module load time
+//      which meant process.env.GROQ_API_KEY was undefined.
+// FIX: Replaced console.warn with logger
+// ============================================================
 
-const client = new Groq({
-  apiKey: process.env.GROQ_API_KEY
-});
+const Groq   = require("groq-sdk");
+const logger = require("../utils/logger");
+
+let _client = null;
+
+function getClient() {
+  if (!_client) {
+    if (!process.env.GROQ_API_KEY) {
+      throw new Error("GROQ_API_KEY is not configured");
+    }
+    _client = new Groq({ apiKey: process.env.GROQ_API_KEY });
+  }
+  return _client;
+}
+
 
 async function rewriteQuery(question, history = []) {
 
-  if (!history.length) return question;
+  try {
 
-  const context = history
-    .slice(-4)
-    .map(m => `${m.role}: ${m.content}`)
-    .join("\n");
+    // If no conversation history → return original question unchanged
+    if (!history || history.length === 0) {
+      return question;
+    }
 
-  const prompt = `
-Rewrite the user question so it becomes a complete standalone search query.
+    const context = history
+      .slice(-4)
+      .map(m => `${m.role}: ${m.content}`)
+      .join("\n");
 
-Conversation:
+    const prompt = `
+Rewrite the user's question into ONE optimized search query
+for retrieving relevant document passages.
+
+Conversation context:
 ${context}
 
 User question:
 ${question}
 
-Rewritten query:
+Return ONLY the rewritten query.
 `;
 
-  try {
-
-    const response = await client.chat.completions.create({
-      model: "llama-3.3-70b-versatile",
-      messages: [{ role: "user", content: prompt }],
-      temperature: 0.1,
-      max_tokens: 50
+    const response = await getClient().chat.completions.create({
+      model:       "llama-3.3-70b-versatile",
+      messages:    [{ role: "user", content: prompt }],
+      temperature: 0.2,
+      max_tokens:  60
     });
 
-    return response.choices[0].message.content.trim() || question;
+    const rewritten = response?.choices?.[0]?.message?.content?.trim();
+    return rewritten || question;
 
   } catch (error) {
 
-    console.warn("[QueryRewrite] failed:", error.message);
-
+    logger.warn("[QueryRewrite] failed:", error.message);
     return question;
+
   }
+
 }
+
 
 module.exports = { rewriteQuery };
