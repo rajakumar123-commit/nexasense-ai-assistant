@@ -6,6 +6,12 @@
 //   2. Re-throw error after marking DB — BullMQ sees the failure
 //      and triggers the retry/backoff configured on the queue
 //   3. Clean up temp file in `finally` block regardless of outcome
+//   4. Process-level crash guards — ONNX background threads emit
+//      unhandled errors after job completion. Without these guards
+//      the process crashes and BullMQ retries the completed job.
+//   5. Skip-if-already-ready guard — if BullMQ retries a job that
+//      already succeeded (e.g. after a worker restart), we bail
+//      out immediately instead of re-processing.
 // ============================================================
 
 require("dotenv").config();
@@ -31,6 +37,40 @@ const QUEUE_NAME = "document-ingestion";
 
 
 // ------------------------------------------------------------
+// FIX 4: Process-level crash guards
+// ONNX runtime fires errors from background threads AFTER the
+// job has already completed. Without these handlers the Node
+// process exits, BullMQ marks the in-progress job as failed,
+// and retries a document that was already successfully embedded.
+// We log the error but keep the worker alive.
+// ------------------------------------------------------------
+
+process.on("uncaughtException", (err) => {
+  // Ignore ONNX/WASM internal errors — they are non-fatal
+  // side-effects of single-threaded WASM cleanup
+  if (err?.message?.includes("onnxruntime") ||
+      err?.message?.includes("DefaultLogger") ||
+      err?.message?.includes("blob:")) {
+    logger.warn("[Worker] Non-fatal ONNX background error (ignored):", err.message);
+    return;
+  }
+  logger.error("[Worker] Uncaught exception — exiting:", err);
+  process.exit(1);
+});
+
+process.on("unhandledRejection", (reason) => {
+  const msg = reason?.message || String(reason);
+  if (msg.includes("onnxruntime") ||
+      msg.includes("DefaultLogger") ||
+      msg.includes("blob:")) {
+    logger.warn("[Worker] Non-fatal ONNX unhandled rejection (ignored):", msg);
+    return;
+  }
+  logger.error("[Worker] Unhandled rejection:", reason);
+});
+
+
+// ------------------------------------------------------------
 // Worker
 // ------------------------------------------------------------
 
@@ -49,6 +89,23 @@ const ingestionWorker = new Worker(
       : path.resolve(process.cwd(), rawFilePath);
 
     try {
+
+      // ----------------------------------------
+      // FIX 5: Skip-if-already-ready guard
+      // If BullMQ retries a job that already completed (e.g. the
+      // worker restarted mid-completion, or a false retry was
+      // triggered by an ONNX background error), bail immediately.
+      // ----------------------------------------
+
+      const { rows } = await db.query(
+        "SELECT status FROM documents WHERE id=$1",
+        [documentId]
+      );
+
+      if (rows[0]?.status === "ready") {
+        logger.info(`[Worker] Skipping ${documentId} — document already ready`);
+        return;
+      }
 
       logger.info(`[Worker] Start ingestion: ${documentId}`);
 
@@ -108,7 +165,7 @@ const ingestionWorker = new Worker(
            VALUES ($1, $2, $3)`,
           [documentId, chunk.content, chunk.chunk_index]
         );
-        // NOTE: search_vector is now auto-populated by the DB trigger
+        // NOTE: search_vector is auto-populated by the DB trigger
       }
 
       logger.info(`[Worker] Saved ${chunks.length} chunks to PostgreSQL`);
@@ -168,14 +225,13 @@ const ingestionWorker = new Worker(
         [error.message, documentId]
       ).catch(() => {});
 
-      // FIX: Re-throw so BullMQ records this as a job failure
-      // and triggers the retry + exponential backoff configured
-      // in the queue (attempts=3, delay=3000, type="exponential")
+      // Re-throw so BullMQ records this as a job failure
+      // and triggers the retry + exponential backoff
       throw error;
 
     } finally {
 
-      // FIX: Always clean up the uploaded temp file
+      // Always clean up the uploaded temp file
       try {
         if (filePath && fs.existsSync(filePath)) {
           fs.unlinkSync(filePath);
@@ -210,6 +266,13 @@ ingestionWorker.on("failed", (job, err) => {
 });
 
 ingestionWorker.on("error", err => {
+  // ONNX fires these after WASM session teardown — non-fatal
+  if (err?.message?.includes("onnxruntime") ||
+      err?.message?.includes("DefaultLogger") ||
+      err?.message?.includes("blob:")) {
+    logger.warn("[Worker] Non-fatal ONNX worker event (ignored):", err.message);
+    return;
+  }
   logger.error("[Worker] Worker error:", err.message);
 });
 

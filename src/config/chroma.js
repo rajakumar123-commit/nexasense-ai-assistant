@@ -1,29 +1,14 @@
 // ============================================================
-// Chroma Client
-// NexaSense AI Assistant
-// FIX: chromadb v3 no longer accepts { path: "..." }.
-//      Parse CHROMA_URL into host+port separately.
+// Chroma REST Client
+// Pure HTTP — no chromadb package, no C++ addons ever loaded.
 // ============================================================
 
-const { ChromaClient } = require("chromadb");
+const BASE = (process.env.CHROMA_URL || "http://chroma:8000").replace(/\/$/, "");
+const API  = `${BASE}/api/v2/tenants/default_tenant/databases/default_database`;
 
-// Parse "http://chroma:8000" → { host: "chroma", port: 8000 }
-function parseChromaUrl(url) {
-  try {
-    const parsed = new URL(url);
-    return {
-      host: parsed.hostname,
-      port: parseInt(parsed.port, 10) || 8000
-    };
-  } catch {
-    return { host: "chroma", port: 8000 };
-  }
-}
+const collectionsUrl     = ()   => `${API}/collections`;
+const collectionUrl      = (n)  => `${API}/collections/${encodeURIComponent(n)}`;
+const collectionQueryUrl = (id) => `${API}/collections/${encodeURIComponent(id)}/query`;
+const collectionUpsertUrl= (id) => `${API}/collections/${encodeURIComponent(id)}/upsert`;
 
-const { host, port } = parseChromaUrl(
-  process.env.CHROMA_URL || "http://chroma:8000"
-);
-
-const chroma = new ChromaClient({ host, port });
-
-module.exports = chroma;
+module.exports = { BASE, API, collectionsUrl, collectionUrl, collectionQueryUrl, collectionUpsertUrl };

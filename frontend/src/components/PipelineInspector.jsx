@@ -33,7 +33,7 @@ function PipelineInspector({ pipeline }) {
       {/* Query Rewrite */}
 
       {pipeline.rewrite && (
-        <Section title="Query Rewrite">
+        <Section title="Query Rewrite" color="text-purple-400 drop-shadow-[0_0_5px_rgba(192,132,252,0.6)]">
           <p className="text-sm text-slate-300 whitespace-pre-wrap">
             {pipeline.rewrite}
           </p>
@@ -43,7 +43,7 @@ function PipelineInspector({ pipeline }) {
       {/* Vector Search */}
 
       {pipeline.vectorResults?.length > 0 && (
-        <Section title="Vector Search">
+        <Section title="Vector Search" color="text-cyan-400 drop-shadow-[0_0_5px_rgba(34,211,238,0.6)]">
 
           {pipeline.vectorResults.map((r, i) => (
             <ResultItem
@@ -59,7 +59,7 @@ function PipelineInspector({ pipeline }) {
       {/* Keyword Search */}
 
       {pipeline.keywordResults?.length > 0 && (
-        <Section title="Keyword Search">
+        <Section title="Keyword Search" color="text-emerald-400 drop-shadow-[0_0_5px_rgba(52,211,153,0.6)]">
 
           {pipeline.keywordResults.map((r, i) => (
             <ResultItem
@@ -75,7 +75,7 @@ function PipelineInspector({ pipeline }) {
       {/* Reranked */}
 
       {pipeline.reranked?.length > 0 && (
-        <Section title="Reranked Chunks">
+        <Section title="Reranked Chunks" color="text-amber-400 drop-shadow-[0_0_5px_rgba(251,191,36,0.6)]">
 
           {pipeline.reranked.map((r, i) => (
             <ResultItem
@@ -91,7 +91,7 @@ function PipelineInspector({ pipeline }) {
       {/* Context */}
 
       {pipeline.contextChunks?.length > 0 && (
-        <Section title="Final Context Sent to LLM">
+        <Section title="Final Context Sent to LLM" color="text-pink-400 drop-shadow-[0_0_5px_rgba(244,114,182,0.6)]">
 
           {pipeline.contextChunks.map((chunk, i) => (
             <p
@@ -119,13 +119,13 @@ export default PipelineInspector;
 // Section
 // ─────────────────────────────────────────
 
-function Section({ title, children }) {
+function Section({ title, children, color = "text-slate-400" }) {
 
   return (
 
     <div className="mt-6 animate-slide-up">
 
-      <h4 className="text-xs uppercase tracking-wide text-slate-400 mb-2">
+      <h4 className={`text-xs font-bold uppercase tracking-wider mb-3 ${color}`}>
         {title}
       </h4>
 
@@ -154,7 +154,7 @@ function ResultItem({ text, score }) {
       </p>
 
       {score !== undefined && (
-        <span className="text-[10px] text-slate-500">
+        <span className="text-[10px] text-slate-500 font-medium">
           {(score * 100).toFixed(1)}%
         </span>
       )}

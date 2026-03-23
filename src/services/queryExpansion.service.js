@@ -4,7 +4,7 @@
 // ============================================================
 
 const { askGemini } = require("./gemini.service");
-const logger        = require("../utils/logger");
+const logger = require("../utils/logger");
 
 // Strip numbered/bulleted list prefixes from LLM output lines
 function cleanQuery(line) {

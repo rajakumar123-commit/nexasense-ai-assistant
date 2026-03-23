@@ -3,8 +3,6 @@
 # NexaSense AI Assistant
 # ============================================================
 
-version: "3.9"
-
 services:
 
   # ----------------------------------------------------------
@@ -83,13 +81,14 @@ services:
       DATABASE_URL: postgresql://postgres:nexasense123@postgres:5432/nexasense
       REDIS_URL: redis://redis:6379
       CHROMA_URL: http://chroma:8000
-      TRANSFORMERS_BACKEND: wasm
       TRANSFORMERS_OFFLINE: "0"
+      XENOVA_CACHE_DIR: /app/.model-cache
     ports:
       - "3000:3000"
     volumes:
       - ./uploads:/app/uploads
       - logs_data:/app/logs
+      - model_cache:/app/.model-cache
 
 
   # ----------------------------------------------------------
@@ -114,11 +113,12 @@ services:
       DATABASE_URL: postgresql://postgres:nexasense123@postgres:5432/nexasense
       REDIS_URL: redis://redis:6379
       CHROMA_URL: http://chroma:8000
-      TRANSFORMERS_BACKEND: wasm
       TRANSFORMERS_OFFLINE: "0"
+      XENOVA_CACHE_DIR: /app/.model-cache
     volumes:
       - ./uploads:/app/uploads
       - logs_data:/app/logs
+      - model_cache:/app/.model-cache
     command: node src/workers/ingestion.worker.js
 
 
@@ -173,3 +173,4 @@ volumes:
   chroma_data:
   redis_data:
   logs_data:
+  model_cache:

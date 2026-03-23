@@ -47,7 +47,7 @@ function checkChroma() {
 
     const chromaBase = process.env.CHROMA_URL || "http://localhost:8000";
     const req = http.get(
-      `${chromaBase}/api/v1/heartbeat`,
+      `${chromaBase}/api/v2/heartbeat`,
       (res) => {
 
         if (res.statusCode === 200) {

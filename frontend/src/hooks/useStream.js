@@ -88,7 +88,8 @@ export default function useStream() {
         sources: Array.isArray(data.sources)
           ? data.sources
           : [],
-        responseTimeMs: data.responseTimeMs ?? null
+        responseTimeMs: data.responseTimeMs ?? null,
+        pipeline: data.pipeline || null
       };
 
     } catch (error) {

@@ -1,40 +1,61 @@
 // ============================================================
-// Embedder Service
+// Embedder Service (Pure REST Implementation)
 // NexaSense AI Assistant
-// Production Optimized (Batch Embeddings + Bulk Insert)
-// FIX: Uses sharedEmbedder to avoid loading the model twice
-//      (once in embedder + once in vectorSearch)
-// FIX: Removed unnecessary BEGIN/COMMIT transaction wrapping
-//      read-only chunk lookups + ChromaDB writes
+// Completely bypasses Chroma NPM client
 // ============================================================
 
 const { embedTexts }  = require("./sharedEmbedder");
 const db              = require("../db");
-const chroma          = require("../config/chroma");
+const chromaConfig    = require("../config/chroma");
 const logger          = require("../utils/logger");
 
-const BATCH_SIZE = 8;   // Smaller batches for WASM stability
+const BATCH_SIZE = 8;
 
+// ─── helpers ────────────────────────────────────────────────
+
+async function chromaFetch(url, opts = {}) {
+  const res = await fetch(url, {
+    ...opts,
+    headers: { "Content-Type": "application/json", ...(opts.headers || {}) },
+  });
+  
+  if (!res.ok) {
+    const body = await res.text().catch(() => "");
+    const err  = new Error(`ChromaDB ${res.status} @ ${url}: ${body}`);
+    err.status = res.status;
+    throw err;
+  }
+  
+  return res.json();
+}
 
 // ------------------------------------------------------------
 // Get (or create) the Chroma collection for a document
-// Collection naming convention: doc_<uuid_with_underscores>
-// MUST match the name used by vectorSearch.service.js
 // ------------------------------------------------------------
 
-async function getCollection(documentId) {
+async function getOrCreateCollection(documentId) {
   const name = `doc_${documentId.replace(/-/g, "_")}`;
 
-  return chroma.getOrCreateCollection({
-    name,
-    metadata: { documentId }
-  });
+  try {
+    // POST /api/v1/collections acts as getOrCreate if we pass get_or_create: true
+    const data = await chromaFetch(chromaConfig.collectionsUrl(), {
+      method: "POST",
+      body: JSON.stringify({
+        name,
+        get_or_create: true,
+        metadata: { documentId }
+      })
+    });
+    
+    if (!data.id) throw new Error("ChromaDB returned no ID for new collection");
+    return data.id;
+  } catch (err) {
+    throw new Error(`Failed to create Chroma collection: ${err.message}`);
+  }
 }
-
 
 // ------------------------------------------------------------
 // Embed and store document chunks
-// Saves vectors to ChromaDB; chunk records already exist in PG
 // ------------------------------------------------------------
 
 async function embedAndStoreChunks(documentId, chunks) {
@@ -45,8 +66,8 @@ async function embedAndStoreChunks(documentId, chunks) {
 
   logger.info(`[Embedder] Processing ${chunks.length} chunks for ${documentId}`);
 
-  const collection = await getCollection(documentId);
-
+  // 1. Get collection ID
+  const collectionId = await getOrCreateCollection(documentId);
   const client = await db.pool.connect();
 
   try {
@@ -86,16 +107,21 @@ async function embedAndStoreChunks(documentId, chunks) {
         continue;
       }
 
-      // ---------- Store Vectors in Chroma ----------
-      await collection.add({
-        ids:        chunkIds,
-        embeddings: embeddings.slice(0, chunkIds.length),
-        documents:  texts.slice(0, chunkIds.length),
-        metadatas:  chunkIds.map((id, j) => ({
-          documentId,
-          chunkIndex: batch[j].chunk_index,
-          chunkId:    id
-        }))
+      // ---------- Store Vectors in Chroma (Native REST) ----------
+      const addUrl = `${chromaConfig.API}/collections/${encodeURIComponent(collectionId)}/add`;
+      
+      await chromaFetch(addUrl, {
+        method: "POST",
+        body: JSON.stringify({
+          ids:        chunkIds,
+          embeddings: embeddings.slice(0, chunkIds.length),
+          documents:  texts.slice(0, chunkIds.length),
+          metadatas:  chunkIds.map((id, j) => ({
+            documentId,
+            chunkIndex: batch[j].chunk_index,
+            chunkId:    id
+          }))
+        })
       });
 
       logger.info(`[Embedder] Stored batch ${batchIndex}/${totalBatches} in ChromaDB`);
@@ -117,9 +143,8 @@ async function embedAndStoreChunks(documentId, chunks) {
 
 }
 
-
 // ------------------------------------------------------------
-// Delete vectors for document (called on document delete)
+// Delete vectors for document
 // ------------------------------------------------------------
 
 async function deleteDocumentVectors(documentId) {
@@ -127,21 +152,25 @@ async function deleteDocumentVectors(documentId) {
   const name = `doc_${documentId.replace(/-/g, "_")}`;
 
   try {
-
-    await chroma.deleteCollection({ name });
+    
+    await chromaFetch(chromaConfig.collectionUrl(name), {
+      method: "DELETE"
+    });
     logger.info(`[Embedder] Deleted collection ${name}`);
 
   } catch (err) {
 
-    logger.warn("[Embedder] Delete collection failed:", err.message);
+    // If it's a 404 it means it was already deleted, ignore it
+    if (err.status !== 404) {
+        logger.warn("[Embedder] Delete collection failed:", err.message);
+    }
 
   }
 
 }
 
-
 module.exports = {
   embedAndStoreChunks,
-  getCollection,
+  getOrCreateCollection,
   deleteDocumentVectors
 };

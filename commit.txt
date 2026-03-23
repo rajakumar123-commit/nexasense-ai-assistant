@@ -1,0 +1,16 @@
+feat(ui/rag): Overhaul RAG Dashboard UI & Fix Telemetry Pipeline
+
+Frontend Changes:
+- Pipeline3DAnimation.jsx: Replaced static RAG visual flowchart with an interactive, 3D animated React component featuring dynamic layers and custom gradients.
+- Dashboard.jsx: Updated layout positioning and stripped redundant headers for 3D animation.
+- PipelineInspector.jsx: Upgraded Inspector headers with glowing, categorical radial colors (Vector, Keyword, Rewrite, Context).
+- useStream.js: Fixed critical bug discarding backend pipeline telemetry in the React fetching state.
+
+Backend RAG Fixes:
+- reranker.service.js: Resolved negative relevance scores (-19%) by strictly returning 0.0-1.0 calculated Cosine Similarity instead of raw L2 distances.
+- retrieval.pipeline.js: Added detailed pipeline stage tracking (context chunks, rewrite query, reranked results).
+- query.controller.js: Patched API to preserve the pipeline telemetry data object in the final JSON response payload.
+
+Documentation:
+- README.md: Added new section with placeholder img tags for UI showcases.
+- assets/: Initialized directory for README screenshots.

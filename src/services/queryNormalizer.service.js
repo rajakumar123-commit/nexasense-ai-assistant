@@ -9,8 +9,9 @@ function normalizeQuery(question) {
 
   let q = question.toLowerCase().trim();
 
-  // remove punctuation
-  q = q.replace(/[^\w\s]/g, " ");
+  // remove punctuation but preserve apostrophes and hyphens
+  // so "what's" and "e-commerce" are not broken into separate tokens
+  q = q.replace(/[^\w\s'-]/g, " ");
 
   // remove repeated spaces
   q = q.replace(/\s+/g, " ");

@@ -96,7 +96,6 @@ async function signup(req, res) {
 
   } catch (err) {
     logger.error('[Auth] Signup error:', err.message, err.stack);
-console.error('SIGNUP RAW ERROR:', err);
     return res.status(500).json({
       success: false,
       error: 'Signup failed. Please try again.'

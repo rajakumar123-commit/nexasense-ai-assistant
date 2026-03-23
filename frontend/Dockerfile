@@ -1,28 +1,37 @@
-# ---------- Build React ----------
+# ============================================================
+# Frontend Dockerfile
+# NexaSense AI Assistant
+# React/Vite → Nginx multi-stage build
+# ============================================================
+
+# ---------- Stage 1: Build React App ----------
 FROM node:20-alpine AS builder
 
 WORKDIR /app
 
+# Copy package files first for layer cache
 COPY package*.json ./
 
-RUN npm config set registry https://registry.npmjs.org \
- && npm config set fetch-retries 5 \
- && npm config set fetch-retry-mintimeout 20000 \
- && npm config set fetch-retry-maxtimeout 120000 \
- && npm ci
+# Install all dependencies (including devDeps needed for Vite build)
+RUN npm install --no-audit --no-fund
 
+# Copy source files
 COPY . .
 
+# Build the production bundle
 RUN npm run build
 
 
-# ---------- Nginx ----------
+# ---------- Stage 2: Serve with Nginx ----------
 FROM nginx:alpine
 
+# Remove default nginx config
 RUN rm /etc/nginx/conf.d/default.conf
 
+# Copy our custom nginx config
 COPY nginx.conf /etc/nginx/conf.d/default.conf
 
+# Copy built React app from stage 1
 COPY --from=builder /app/dist /usr/share/nginx/html
 
 EXPOSE 80

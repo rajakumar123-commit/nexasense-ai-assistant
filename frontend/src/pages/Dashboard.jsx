@@ -96,10 +96,7 @@ function Dashboard() {
       </h1>
 
       {/* 3D Pipeline Visualization */}
-      <div className="mb-12">
-        <h2 className="text-xl font-semibold mb-4 text-slate-300">
-          Global RAG Pipeline
-        </h2>
+      <div className="mb-12 rounded-2xl overflow-hidden shadow-2xl ring-1 ring-white/5 bg-[#04080f]/50 mt-12">
         <Pipeline3DAnimation />
       </div>
 

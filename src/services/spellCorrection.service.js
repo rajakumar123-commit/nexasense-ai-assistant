@@ -6,7 +6,7 @@
 // ============================================================
 
 const { askGemini } = require("./gemini.service");
-const logger        = require("../utils/logger");
+const logger = require("../utils/logger");
 
 const MAX_CORRECTION_TIME = 30000; // ms safety timeout
 

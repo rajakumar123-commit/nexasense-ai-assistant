@@ -1,0 +1,12 @@
+﻿[dotenv@17.3.1] injecting env (0) from .env -- tip: ≡ƒöÉ encrypt with Dotenvx: https://dotenvx.com
+2026-03-22T17:39:41.814Z [INFO] [Redis] Connected
+2026-03-22T17:39:41.840Z [INFO] [Redis] Ready
+2026-03-22T17:39:41.866Z [INFO] Γ£à PostgreSQL connected
+Γ£à PostgreSQL connected and healthy
+ΓÅ│ Pre-warming embedder model...
+2026-03-22T17:39:41.891Z [INFO] [SharedEmbedder] Spawning separate OS process for ONNX...
+2026-03-22T17:39:43.802Z [INFO] [SharedEmbedder] Child process model ready
+2026-03-22T17:39:44.319Z [INFO] [SharedEmbedder] Child process model ready
+Γ£à Embedder model warmed up safely!
+≡ƒÜÇ NexaSense running on port 3000
+Environment: development

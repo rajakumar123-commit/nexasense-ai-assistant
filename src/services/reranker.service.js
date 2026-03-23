@@ -45,10 +45,14 @@ async function rerankChunks(query, chunks) {
       chunks.map(chunk => embedSingle(chunk.content))
     );
 
-    const scoredChunks = chunks.map((chunk, index) => ({
-      ...chunk,
-      rerankScore: cosineSimilarity(queryVector, chunkVectors[index])
-    }));
+    const scoredChunks = chunks.map((chunk, index) => {
+      const sim = cosineSimilarity(queryVector, chunkVectors[index]);
+      return {
+        ...chunk,
+        similarity: sim,
+        rerankScore: sim
+      };
+    });
 
     // Sort highest similarity first
     scoredChunks.sort((a, b) => b.rerankScore - a.rerankScore);

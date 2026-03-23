@@ -10,7 +10,7 @@ const { askGemini } = require("./gemini.service");
 const logger = require("../utils/logger");
 
 const MAX_SOURCE_PREVIEW = 120;
-const MAX_REASONING_TIME =30000; // ms safety timeout
+const MAX_REASONING_TIME = 30000; // ms safety timeout
 
 // ------------------------------------------------------------
 // Build evidence context from retrieved sources

@@ -4,7 +4,7 @@
 // LLM Answer Generation (Groq - Llama 3.3)
 // ============================================================
 
-const Groq   = require("groq-sdk");
+const Groq = require("groq-sdk");
 const logger = require("../utils/logger");
 
 // Client is created lazily inside generateAnswer so that
@@ -20,10 +20,10 @@ function getClient() {
   return _client;
 }
 
-const MODEL_NAME         = "llama-3.3-70b-versatile";
+const MODEL_NAME = "llama-3.3-70b-versatile";
 const MAX_CONTEXT_CHUNKS = 5;
-const MAX_HISTORY_MSGS   = 8;
-const MAX_TOKENS         = 1500;
+const MAX_HISTORY_MSGS = 8;
+const MAX_TOKENS = 1500;
 
 
 // ------------------------------------------------------------
@@ -143,7 +143,7 @@ async function generateAnswer(question, chunks = [], history = []) {
       {
         role: "user",
         content:
-`## Document Sources
+          `## Document Sources
 
 ${context}
 

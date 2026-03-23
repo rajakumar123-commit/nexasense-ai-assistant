@@ -149,6 +149,7 @@ async function queryDocument(req, res) {
     result = {
       answer: result?.answer || "",
       sources: result?.sources || [],
+      pipeline: result?.pipeline || null,
       responseTimeMs: result?.responseTimeMs || (Date.now() - start),
       chunksRetrieved: result?.chunksRetrieved || 0,
       chunksUsed: result?.chunksUsed || 0,
@@ -214,6 +215,7 @@ async function queryDocument(req, res) {
       answer:result.answer,
 
       sources:result.sources,
+      pipeline:result.pipeline,
 
       provider,
 

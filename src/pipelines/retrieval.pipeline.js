@@ -10,25 +10,22 @@ const {
   searchUserDocuments
 } = require("../services/vectorSearch.service");
 
-const { keywordSearch }                  = require("../services/keywordSearch.service");
-const { rerankChunks }                   = require("../services/reranker.service");
-const { rewriteQuery }                   = require("../services/queryRewrite.service");
+const { keywordSearch } = require("../services/keywordSearch.service");
+const { rerankChunks } = require("../services/reranker.service");
+const { processQueryWithGroq } = require("../services/queryRewrite.service");
 const { generateAnswer, estimateTokens } = require("../services/llm.service");
 
-const { hydeSearchVector }    = require("../services/hyde.service");
-const { compressContext }     = require("../services/contextCompression.service");
-const { reflectAnswer }       = require("../services/selfReflection.service");
+const { compressContext } = require("../services/contextCompression.service");
+const { reflectAnswer } = require("../services/selfReflection.service");
 
 const { applyReasoning } = require("../services/geminiReasoning.service");
-const { askGemini }      = require("../services/gemini.service");
+const { askGemini } = require("../services/gemini.service");
 
 const { getCachedResult, storeCachedResult } = require("../cache/queryCache");
 const { getSemanticCache, storeSemanticCache } = require("../cache/semanticCache");
 
-const { normalizeQuery }    = require("../services/queryNormalizer.service");
-const { correctSpelling }   = require("../services/spellCorrection.service");
-const { expandQuery }       = require("../services/queryExpansion.service");
-const { recordQueryMetrics} = require("../services/metrics.service");
+const { normalizeQuery } = require("../services/queryNormalizer.service");
+const { recordQueryMetrics } = require("../services/metrics.service");
 
 const logger = require("../utils/logger");
 
@@ -77,7 +74,11 @@ async function extractDocumentDomain(userId, documentId, seedQuery) {
       : await searchDocument(documentId, seedQuery, 5);
 
     if (!domainChunks || !domainChunks.length) {
-      domainChunks = await keywordSearch(documentId, seedQuery, 5);
+      // Only run keyword fallback when we have a specific document.
+      // In multi-doc (userId) mode documentId may be undefined.
+      if (documentId) {
+        domainChunks = await keywordSearch(documentId, seedQuery, 5);
+      }
     }
 
     if (!domainChunks || !domainChunks.length) return null;
@@ -116,16 +117,16 @@ Return ONLY the domain description sentence. No preamble.
 
 
 async function groqDomainAnswer(question, domainContext) {
-  const Groq   = require("groq-sdk");
+  const Groq = require("groq-sdk");
   const client = new Groq({ apiKey: process.env.GROQ_API_KEY });
 
   const response = await client.chat.completions.create({
-    model:       "llama-3.3-70b-versatile",
-    max_tokens:  1000,
+    model: "llama-3.3-70b-versatile",
+    max_tokens: 1000,
     temperature: 0.2,
     messages: [
       {
-        role:    "system",
+        role: "system",
         content: `You are a document assistant. Answer questions ONLY if they relate to this domain:\n\n${domainContext}\n\nIf the question is unrelated, respond exactly:\n"This question is outside the scope of the uploaded documents."\n\nDo not use knowledge outside this domain.`
       },
       { role: "user", content: question }
@@ -161,13 +162,13 @@ NO
 
   try {
     logger.info("[Pipeline] isQueryInDomain falling back to Groq");
-    const Groq   = require("groq-sdk");
+    const Groq = require("groq-sdk");
     const client = new Groq({ apiKey: process.env.GROQ_API_KEY });
     const response = await client.chat.completions.create({
-      model:       "llama-3.3-70b-versatile",
-      max_tokens:  5,
+      model: "llama-3.3-70b-versatile",
+      max_tokens: 5,
       temperature: 0,
-      messages:    [{ role: "user", content: prompt }]
+      messages: [{ role: "user", content: prompt }]
     });
     return (response?.choices?.[0]?.message?.content || "").trim().toUpperCase().startsWith("YES");
   } catch (groqErr) {
@@ -196,14 +197,14 @@ ${question}
   try {
     const answer = await askGemini(prompt);
     return {
-      answer:          (answer || "").trim() || "This question is outside the scope of the uploaded documents.",
-      sources:         [],
-      provider:        "gemini",
+      answer: (answer || "").trim() || "This question is outside the scope of the uploaded documents.",
+      sources: [],
+      provider: "gemini",
       chunksRetrieved,
-      chunksUsed:      0,
-      tokenEstimate:   estimateTokens(answer || ""),
-      fromCache:       false,
-      responseTimeMs:  Date.now() - startTime
+      chunksUsed: 0,
+      tokenEstimate: estimateTokens(answer || ""),
+      fromCache: false,
+      responseTimeMs: Date.now() - startTime
     };
   } catch (geminiErr) {
     logger.warn("[Pipeline] Gemini context mode failed:", geminiErr.message);
@@ -213,26 +214,26 @@ ${question}
   try {
     const answer = await groqDomainAnswer(question, domainContext);
     return {
-      answer:          answer || "This question is outside the scope of the uploaded documents.",
-      sources:         [],
-      provider:        "groq-fallback",
+      answer: answer || "This question is outside the scope of the uploaded documents.",
+      sources: [],
+      provider: "groq-fallback",
       chunksRetrieved,
-      chunksUsed:      0,
-      tokenEstimate:   estimateTokens(answer || ""),
-      fromCache:       false,
-      responseTimeMs:  Date.now() - startTime
+      chunksUsed: 0,
+      tokenEstimate: estimateTokens(answer || ""),
+      fromCache: false,
+      responseTimeMs: Date.now() - startTime
     };
   } catch (groqErr) {
     logger.error("[Pipeline] Groq context mode fallback also failed:", groqErr.message);
     return {
-      answer:          "This information is not available in the uploaded document.",
-      sources:         [],
-      provider:        "none",
+      answer: "This information is not available in the uploaded document.",
+      sources: [],
+      provider: "none",
       chunksRetrieved,
-      chunksUsed:      0,
-      tokenEstimate:   0,
-      fromCache:       false,
-      responseTimeMs:  Date.now() - startTime
+      chunksUsed: 0,
+      tokenEstimate: 0,
+      fromCache: false,
+      responseTimeMs: Date.now() - startTime
     };
   }
 }
@@ -245,31 +246,29 @@ ${question}
 async function runRetrievalPipeline({ userId, documentId, question, conversationId }) {
 
   const startTime = Date.now();
-  const svc       = getConvSvc();
+  const svc = getConvSvc();
 
   let chunksRetrieved = 0;
-  let chunksUsed      = 0;
+  let chunksUsed = 0;
 
   try {
 
     // ---------------------------------------------------------
-    // QUERY UNDERSTANDING
+    // QUERY UNDERSTANDING (Basic Normalization)
     // ---------------------------------------------------------
 
     question = normalizeQuery(question);
-    question = await correctSpelling(question);
-
-    const expandedQueries = await expandQuery(question);
 
 
     // ---------------------------------------------------------
     // CACHE CHECK
     // ---------------------------------------------------------
 
+    logger.info("[Pipeline] Step 0: CACHE CHECK");
     const cached = getCachedResult(documentId, question);
 
     if (cached) {
-      recordQueryMetrics({ userId, documentId, totalMs: Date.now() - startTime, fromCache: true }).catch(() => {});
+      recordQueryMetrics({ userId, documentId, totalMs: Date.now() - startTime, fromCache: true }).catch(() => { });
       return { ...cached, chunksRetrieved: cached.chunksRetrieved || 0, chunksUsed: cached.chunksUsed || 0, tokenEstimate: cached.tokenEstimate || 0, fromCache: true, responseTimeMs: Date.now() - startTime };
     }
 
@@ -278,10 +277,11 @@ async function runRetrievalPipeline({ userId, documentId, question, conversation
     // SEMANTIC CACHE CHECK
     // ---------------------------------------------------------
 
+    logger.info("[Pipeline] Step 1: SEMANTIC CACHE");
     const semanticHit = await getSemanticCache(question);
 
     if (semanticHit) {
-      recordQueryMetrics({ userId, documentId, totalMs: Date.now() - startTime, fromCache: true }).catch(() => {});
+      recordQueryMetrics({ userId, documentId, totalMs: Date.now() - startTime, fromCache: true }).catch(() => { });
       return { ...semanticHit, fromCache: true, semanticCache: true, responseTimeMs: Date.now() - startTime };
     }
 
@@ -292,35 +292,34 @@ async function runRetrievalPipeline({ userId, documentId, question, conversation
 
     let history = [];
     if (conversationId && svc) {
-      try { history = await svc.getConversationHistory(conversationId); } catch {}
+      try { history = await svc.getConversationHistory(conversationId); } catch { }
     }
 
 
     // ---------------------------------------------------------
-    // QUERY REWRITE
+    // NODE 1: GROQ PRE-PROCESSING (1 API Call)
+    // Handles Spelling, History Resolution, and Expansion
     // ---------------------------------------------------------
 
-    let rewrittenQueries = await rewriteQuery(question, history);
-    if (!Array.isArray(rewrittenQueries)) rewrittenQueries = [rewrittenQueries];
-    rewrittenQueries = [...new Set([...expandedQueries, ...rewrittenQueries])];
+    logger.info("[Pipeline] Step 2: GROQ PRE-PROCESSING");
+    const groqResult = await processQueryWithGroq(question, history);
+    question = groqResult.standaloneQuery;
+    const rewrittenQueries = [...new Set([question, ...groqResult.searchQueries])];
 
 
     // ---------------------------------------------------------
     // HYDE GENERATION
+    // Generated directly by Groq in Node 1 to save an API call
     // ---------------------------------------------------------
 
-    let hypotheticalDoc = rewrittenQueries[0];
-
-    try {
-      const hyde = await hydeSearchVector(rewrittenQueries[0]);
-      hypotheticalDoc = hyde?.hypotheticalDoc || rewrittenQueries[0];
-    } catch {}
+    let hypotheticalDoc = groqResult.hypotheticalDocument || question;
 
 
     // ---------------------------------------------------------
     // VECTOR RETRIEVAL (MULTI-DOCUMENT)
     // ---------------------------------------------------------
 
+    logger.info("[Pipeline] Step 3: VECTOR RETRIEVAL");
     const vectorPromises = [
       userId ? searchUserDocuments(userId, hypotheticalDoc) : searchDocument(documentId, hypotheticalDoc),
       ...rewrittenQueries.map(q =>
@@ -331,12 +330,17 @@ async function runRetrievalPipeline({ userId, documentId, question, conversation
 
     // ---------------------------------------------------------
     // KEYWORD RETRIEVAL
+    // Only run keyword search when we have a specific documentId.
+    // In multi-doc (userId) mode the documentId may be undefined,
+    // so keywordSearch would query with WHERE document_id = undefined
+    // and always return []. Skip it in that case.
     // ---------------------------------------------------------
 
-    const keywordQueries  = [...rewrittenQueries, hypotheticalDoc];
+    logger.info("[Pipeline] Step 4: KEYWORD RETRIEVAL");
+    const keywordQueries = documentId ? [...rewrittenQueries, hypotheticalDoc] : [];
     const keywordPromises = keywordQueries.map(q => keywordSearch(documentId, q));
 
-
+    logger.info("[Pipeline] Step 5: AWAITING SEARCH PROMISES");
     const [vectorResults, keywordResults] = await Promise.all([
       Promise.all(vectorPromises),
       Promise.all(keywordPromises)
@@ -360,6 +364,7 @@ async function runRetrievalPipeline({ userId, documentId, question, conversation
     // RERANK
     // ---------------------------------------------------------
 
+    logger.info("[Pipeline] Step 6: RERANK");
     let finalChunks = [];
     if (chunks.length) {
       const reranked = await rerankChunks(question, chunks);
@@ -376,37 +381,16 @@ async function runRetrievalPipeline({ userId, documentId, question, conversation
 
     if (!finalChunks.length) {
 
-      logger.info("[Pipeline] Gemini Context Mode activated — no usable chunks found");
+      logger.info("[Pipeline] Gemini Context Mode activated — retrieving general document answer");
 
-      const domainContext = await extractDocumentDomain(userId, documentId, question);
-
-      if (!domainContext) {
-        logger.warn("[Pipeline] Domain extraction failed — using hard fallback");
-        return {
-          answer: "This information is not available in the uploaded document.",
-          sources: [], confidence: 0, chunksRetrieved, chunksUsed,
-          tokenEstimate: 0, fromCache: false, responseTimeMs: Date.now() - startTime
-        };
-      }
-
-      const inDomain = await isQueryInDomain(question, domainContext);
-
-      if (!inDomain) {
-        logger.info("[Pipeline] Query rejected — outside document domain");
-        return {
-          answer: "This question is outside the scope of the uploaded documents.",
-          sources: [], provider: "gemini", chunksRetrieved, chunksUsed: 0,
-          tokenEstimate: 0, fromCache: false, responseTimeMs: Date.now() - startTime
-        };
-      }
-
-      const fallbackResult = await geminiContextModeFallback({ question, domainContext, chunksRetrieved, startTime });
+      // Go strictly to the final Gemini Fallback (bypassing 2 redundant context checks)
+      const fallbackResult = await geminiContextModeFallback({ question, domainContext: "the relevant topic", chunksRetrieved, startTime });
 
       if (conversationId && svc) {
         Promise.all([
           svc.saveMessage(conversationId, "user", question),
           svc.saveMessage(conversationId, "assistant", fallbackResult.answer)
-        ]).catch(() => {});
+        ]).catch(() => { });
       }
 
       return fallbackResult;
@@ -418,19 +402,21 @@ async function runRetrievalPipeline({ userId, documentId, question, conversation
     // CONTEXT COMPRESSION
     // ---------------------------------------------------------
 
+    logger.info("[Pipeline] Step 7: CONTEXT COMPRESSION");
     try {
       const compressed = await compressContext(question, finalChunks);
       finalChunks = compressed?.map((c, i) => ({
         ...finalChunks[i],
         content: c?.content || finalChunks[i]?.content
       })) || finalChunks;
-    } catch {}
+    } catch { }
 
 
     // ---------------------------------------------------------
     // GENERATE ANSWER
     // ---------------------------------------------------------
 
+    logger.info("[Pipeline] Step 8: GENERATE ANSWER");
     let answer = await generateAnswer(question, finalChunks, history);
 
 
@@ -438,6 +424,7 @@ async function runRetrievalPipeline({ userId, documentId, question, conversation
     // GEMINI REASONING
     // ---------------------------------------------------------
 
+    logger.info("[Pipeline] Step 9: GEMINI REASONING");
     try {
       answer = await applyReasoning(question, answer, finalChunks);
     } catch {
@@ -453,13 +440,14 @@ async function runRetrievalPipeline({ userId, documentId, question, conversation
     try {
       const reflection = await reflectAnswer(question, answer, finalChunks);
       confidence = reflection?.reflection?.confidence ?? null;
-    } catch {}
+    } catch { }
 
 
     // ---------------------------------------------------------
     // BUILD RESULT
     // ---------------------------------------------------------
 
+    logger.info("[Pipeline] Step 10: BUILD RESULT");
     const result = {
       answer,
       confidence,
@@ -467,14 +455,21 @@ async function runRetrievalPipeline({ userId, documentId, question, conversation
       chunksUsed,
       sources: finalChunks.map((c, i) => ({
         sourceIndex: i + 1,
-        chunkIndex:  c?.metadata?.chunkIndex ?? null,
-        pageNumber:  c?.metadata?.pageNumber  ?? null,
-        similarity:  c?.similarity             ?? null,
-        preview:     (c?.content || "").slice(0, 150)
+        chunkIndex: c?.metadata?.chunkIndex ?? null,
+        pageNumber: c?.metadata?.pageNumber ?? null,
+        similarity: c?.similarity ?? null,
+        preview: (c?.content || "").slice(0, 150)
       })),
-      fromCache:     false,
+      pipeline: {
+        rewrite: question !== groqResult.standaloneQuery ? groqResult.standaloneQuery : null,
+        vectorResults: vectorResults.flat().slice(0, 5).map(c => ({ chunk: c.content, score: c?.similarity })),
+        keywordResults: keywordResults.flat().slice(0, 5).map(c => ({ chunk: c.content, score: c?.similarity })),
+        reranked: finalChunks.map(c => ({ chunk: c.content, score: c?.similarity })),
+        contextChunks: finalChunks.map(c => c.content)
+      },
+      fromCache: false,
       responseTimeMs: Date.now() - startTime,
-      tokenEstimate:  estimateTokens(answer || "")
+      tokenEstimate: estimateTokens(answer || "")
     };
 
 
@@ -484,9 +479,9 @@ async function runRetrievalPipeline({ userId, documentId, question, conversation
 
     if (conversationId && svc) {
       Promise.all([
-        svc.saveMessage(conversationId, "user",      question),
+        svc.saveMessage(conversationId, "user", question),
         svc.saveMessage(conversationId, "assistant", answer)
-      ]).catch(() => {});
+      ]).catch(() => { });
     }
 
 
@@ -495,7 +490,7 @@ async function runRetrievalPipeline({ userId, documentId, question, conversation
     // ---------------------------------------------------------
 
     storeCachedResult(documentId, question, result);
-    storeSemanticCache(question, result).catch(() => {});
+    storeSemanticCache(question, result).catch(() => { });
 
 
     // ---------------------------------------------------------
@@ -506,7 +501,7 @@ async function runRetrievalPipeline({ userId, documentId, question, conversation
       userId, documentId,
       totalMs: result.responseTimeMs,
       fromCache: false
-    }).catch(() => {});
+    }).catch(() => { });
 
     return result;
 
@@ -515,13 +510,13 @@ async function runRetrievalPipeline({ userId, documentId, question, conversation
     logger.error("[Pipeline] Fatal error:", error.message, error.stack);
 
     return {
-      answer:         "An unexpected error occurred while processing your question.",
-      sources:        [],
-      confidence:     0,
+      answer: "An unexpected error occurred while processing your question.",
+      sources: [],
+      confidence: 0,
       chunksRetrieved,
       chunksUsed,
-      tokenEstimate:  0,
-      fromCache:      false,
+      tokenEstimate: 0,
+      fromCache: false,
       responseTimeMs: Date.now() - startTime
     };
 

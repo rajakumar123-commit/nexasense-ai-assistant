@@ -1,47 +1,51 @@
 # ============================================================
 # Dockerfile
 # NexaSense AI Assistant
-# Production-hardened Node.js container
+# Backend + Worker container
 # ============================================================
 
 FROM node:20-bookworm-slim
 
-ENV NODE_OPTIONS="--experimental-wasm-threads --experimental-wasm-simd"
+# Clear NODE_OPTIONS — experimental WASM flags are NOT allowed
+# in NODE_OPTIONS (causes "not allowed in NODE_OPTIONS" error).
+# The WASM runtime sets its own flags internally.
+ENV NODE_OPTIONS=""
 
 WORKDIR /app
 
 # Install dumb-init for proper signal handling
-# (prevents zombie processes, ensures graceful shutdown)
 RUN apt-get update \
   && apt-get install -y --no-install-recommends dumb-init \
   && rm -rf /var/lib/apt/lists/*
 
-# Copy package files first (layer cache — only reinstalls
-# when package.json changes, not on every code change)
+# Copy package files first (layer cache optimisation)
 COPY package*.json ./
 
 # Install production dependencies only
 RUN npm install --omit=dev --no-audit --no-fund \
   && npm cache clean --force
 
-# Copy source
+# Copy application source
 COPY . .
 
-# Create required directories with correct permissions
-# uploads: incoming files before processing
-# logs:    persistent application logs
-RUN mkdir -p /app/uploads /app/logs \
+# Pre-cache embedding model + set permissions in one layer
+RUN mkdir -p /app/uploads /app/logs /app/.model-cache \
+  && node -e " \
+    const { pipeline } = require('@xenova/transformers'); \
+    pipeline('feature-extraction', 'Xenova/all-MiniLM-L6-v2', { quantized: true }) \
+      .then(() => { console.log('Model cached ok'); process.exit(0); }) \
+      .catch(e => { console.error(e); process.exit(1); }); \
+  " \
   && groupadd -r nexasense \
   && useradd -r -g nexasense nexasense \
   && chown -R nexasense:nexasense /app
 
-# Drop to non-root user (security)
+# Drop to non-root user (security best practice)
 USER nexasense
 
 EXPOSE 3000
 
 # dumb-init as PID 1 — forwards signals correctly to Node
-# so SIGTERM triggers graceful shutdown instead of SIGKILL
 ENTRYPOINT ["dumb-init", "--"]
 
 CMD ["node", "src/server.js"]
