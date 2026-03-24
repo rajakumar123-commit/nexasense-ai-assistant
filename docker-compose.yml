@@ -1,15 +1,12 @@
 # ============================================================
-# docker-compose.yml
-# NexaSense AI Assistant
+# docker-compose.yml — NexaSense AI Assistant
 # ============================================================
 
 services:
 
-  # ----------------------------------------------------------
-  # PostgreSQL
-  # ----------------------------------------------------------
+  # ── PostgreSQL ─────────────────────────────────────────────
   postgres:
-    image: postgres:16
+    image: pgvector/pgvector:pg16
     container_name: nexasense-postgres
     restart: always
     environment:
@@ -20,21 +17,20 @@ services:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
-      - ./schema.sql:/docker-entrypoint-initdb.d/schema.sql
+      - ./schema.sql:/docker-entrypoint-initdb.d/01_schema.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres -d nexasense"]
       interval: 10s
       timeout: 5s
       retries: 5
+      start_period: 20s
 
-
-  # ----------------------------------------------------------
-  # Redis (BullMQ queue + semantic cache)
-  # ----------------------------------------------------------
+  # ── Redis ─────────────────────────────────────────────────
   redis:
-    image: redis:7
+    image: redis:7-alpine
     container_name: nexasense-redis
     restart: always
+    command: redis-server --maxmemory 512mb --maxmemory-policy noeviction
     ports:
       - "6379:6379"
     volumes:
@@ -45,12 +41,9 @@ services:
       timeout: 5s
       retries: 5
 
-
-  # ----------------------------------------------------------
-  # Chroma Vector Database
-  # ----------------------------------------------------------
+  # ── ChromaDB ──────────────────────────────────────────────
   chroma:
-    image: chromadb/chroma
+    image: chromadb/chroma:latest
     container_name: nexasense-chroma
     restart: always
     ports:
@@ -58,10 +51,7 @@ services:
     volumes:
       - chroma_data:/data
 
-
-  # ----------------------------------------------------------
-  # Backend API
-  # ----------------------------------------------------------
+  # ── Backend API ────────────────────────────────────────────
   backend:
     build:
       context: .
@@ -83,17 +73,21 @@ services:
       CHROMA_URL: http://chroma:8000
       TRANSFORMERS_OFFLINE: "0"
       XENOVA_CACHE_DIR: /app/.model-cache
+      NODE_ENV: production
     ports:
       - "3000:3000"
     volumes:
       - ./uploads:/app/uploads
       - logs_data:/app/logs
       - model_cache:/app/.model-cache
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
 
-
-  # ----------------------------------------------------------
-  # BullMQ Worker
-  # ----------------------------------------------------------
+  # ── Worker ────────────────────────────────────────────────
   worker:
     build:
       context: .
@@ -113,33 +107,38 @@ services:
       DATABASE_URL: postgresql://postgres:nexasense123@postgres:5432/nexasense
       REDIS_URL: redis://redis:6379
       CHROMA_URL: http://chroma:8000
-      TRANSFORMERS_OFFLINE: "0"
-      XENOVA_CACHE_DIR: /app/.model-cache
+      NODE_ENV: production
     volumes:
       - ./uploads:/app/uploads
       - logs_data:/app/logs
       - model_cache:/app/.model-cache
     command: node src/workers/ingestion.worker.js
+    # Worker healthcheck — detects silent crashes
+    healthcheck:
+      test: ["CMD-SHELL", "ps aux | grep 'ingestion.worker' | grep -v grep || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
 
-
-  # ----------------------------------------------------------
-  # Frontend
-  # ----------------------------------------------------------
+  # ── Frontend (FIXED) ──────────────────────────────────────
   frontend:
     build:
       context: ./frontend
       dockerfile: Dockerfile
+      args:
+        # Read from root .env (line: VITE_RAZORPAY_KEY_ID=rzp_test_...)
+        # This is a PUBLIC key — safe to bake into the frontend build
+        VITE_RAZORPAY_KEY_ID: ${VITE_RAZORPAY_KEY_ID}
     container_name: nexasense-frontend
     restart: always
     depends_on:
-      - backend
+      backend:
+        condition: service_healthy
     ports:
-      - "5173:80"
+      - "5175:80"
 
-
-  # ----------------------------------------------------------
-  # Test Runner
-  # ----------------------------------------------------------
+  # ── Test Runner ────────────────────────────────────────────
   test:
     build:
       context: .
@@ -164,10 +163,6 @@ services:
     profiles:
       - test
 
-
-# ----------------------------------------------------------
-# Volumes
-# ----------------------------------------------------------
 volumes:
   postgres_data:
   chroma_data:

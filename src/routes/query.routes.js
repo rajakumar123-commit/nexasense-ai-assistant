@@ -9,6 +9,7 @@ const router = express.Router();
 const { queryDocument } = require("../controllers/query.controller");
 
 const authMiddleware = require("../middleware/auth.middleware");
+const requirePermission = require("../middleware/permissionMiddleware");
 const rateLimitMiddleware = require("../middleware/rateLimit.middleware");
 
 
@@ -19,6 +20,7 @@ const rateLimitMiddleware = require("../middleware/rateLimit.middleware");
 router.post(
   "/query",
   authMiddleware,
+  requirePermission("chat:query"),
   rateLimitMiddleware,
   queryDocument
 );

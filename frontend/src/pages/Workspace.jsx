@@ -2,15 +2,17 @@
 // Workspace.jsx — NexaSense
 // Fix 4: toast on upload/delete success/error
 // Fix 5: dropped file passed to UploadModal via initialFile
+// Fix 6: infinite polling loop fixed
 // ============================================================
 
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useCallback, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
 import toast from "react-hot-toast";
 import useApi from "../hooks/useApi";
 import DocumentCard from "../components/DocumentCard";
 import UploadModal  from "../components/UploadModal";
+import ConfirmModal from "../components/ConfirmModal";
 
 function Workspace() {
 
@@ -21,10 +23,14 @@ function Workspace() {
   const [loading, setLoading]       = useState(true);
   const [showUpload, setShowUpload] = useState(false);
   const [dragging, setDragging]     = useState(false);
-  const [droppedFile, setDroppedFile] = useState(null); // Fix 5
+  const [droppedFile, setDroppedFile] = useState(null);
+  const [confirmDelete, setConfirmDelete] = useState(null); // { id, name }
 
   // ── Fetch ────────────────────────────────────────────────
-  const fetchDocuments = async () => {
+  // useCallback with [] so fetchDocuments is stable across renders.
+  // useApi() returns new function refs every render, so we must NOT put api in deps.
+  // The underlying axios instance is a module-level singleton so this is safe.
+  const fetchDocuments = useCallback(async () => {
     try {
       const res  = await api.get("/documents");
       const docs = res.data?.documents || res.data?.data || res.documents || [];
@@ -34,27 +40,46 @@ function Workspace() {
     } finally {
       setLoading(false);
     }
-  };
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  useEffect(() => { fetchDocuments(); }, []);
+  useEffect(() => { fetchDocuments(); }, [fetchDocuments]);
 
-  // Poll while processing
+  // Poll while any document is still processing.
+  // Tracks via ref to avoid re-running effect every time documents changes.
+  const pollingRef = useRef(null);
   useEffect(() => {
-    const processing = documents.some(d => !["ready","error"].includes(d.status));
-    if (!processing) return;
-    const id = setInterval(fetchDocuments, 3000);
-    return () => clearInterval(id);
-  }, [documents]);
+    const processing = documents.some(d => !["ready", "error"].includes(d.status));
+
+    // Clear any existing interval first
+    if (pollingRef.current) {
+      clearInterval(pollingRef.current);
+      pollingRef.current = null;
+    }
+
+    if (processing) {
+      pollingRef.current = setInterval(fetchDocuments, 3000);
+    }
+
+    return () => {
+      if (pollingRef.current) {
+        clearInterval(pollingRef.current);
+        pollingRef.current = null;
+      }
+    };
+  }, [documents.map(d => d.status).join(",")]); // only re-run when statuses actually change
 
   // ── Delete ───────────────────────────────────────────────
-  const deleteDocument = async (id) => {
-    if (!window.confirm("Delete this document?")) return;
+  const requestDelete = (id, name) => setConfirmDelete({ id, name });
+
+  const confirmDeleteDoc = async () => {
+    const { id } = confirmDelete;
+    setConfirmDelete(null);
     try {
       await api.del(`/documents/${id}`);
       setDocuments(prev => prev.filter(doc => doc.id !== id));
-      toast.success("Document deleted");        // Fix 4
+      toast.success("Document deleted");
     } catch {
-      toast.error("Delete failed — try again"); // Fix 4
+      toast.error("Delete failed — try again");
     }
   };
 
@@ -129,15 +154,27 @@ function Workspace() {
 
       {/* Empty State */}
       {!loading && documents.length === 0 && (
-        <div className="text-center text-slate-400 mt-20">
-          <p className="mb-4">No documents uploaded yet.</p>
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="flex flex-col items-center justify-center py-24 text-center"
+        >
+          <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-emerald-500/20 to-blue-500/20 border border-emerald-500/20 flex items-center justify-center mb-6">
+            <svg className="w-10 h-10 text-emerald-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+            </svg>
+          </div>
+          <h3 className="text-xl font-semibold text-slate-200 mb-2">No documents yet</h3>
+          <p className="text-slate-500 text-sm mb-2">Upload a PDF to get started with AI-powered Q&A.</p>
+          <p className="text-slate-600 text-xs mb-8">💡 Tip: You can also drag &amp; drop a PDF anywhere on this page</p>
           <button
             onClick={() => setShowUpload(true)}
-            className="bg-emerald-500 hover:bg-emerald-600 px-5 py-2 rounded-md"
+            className="flex items-center gap-2 px-6 py-3 rounded-xl font-semibold text-sm bg-gradient-to-r from-emerald-600 to-blue-600 hover:from-emerald-500 hover:to-blue-500 text-white shadow-lg shadow-emerald-500/25 transition-all"
           >
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
             Upload Your First PDF
           </button>
-        </div>
+        </motion.div>
       )}
 
       {/* Documents Grid */}
@@ -152,7 +189,7 @@ function Workspace() {
               <DocumentCard
                 document={doc}
                 onChat={openChat}
-                onDelete={deleteDocument}
+                onDelete={(id) => requestDelete(id, doc.file_name)}
               />
             </div>
           ))}
@@ -166,6 +203,15 @@ function Workspace() {
         onUploadSuccess={handleUploadSuccess}
         onUploadError={handleUploadError}
         initialFile={droppedFile}
+      />
+
+      <ConfirmModal
+        isOpen={!!confirmDelete}
+        title="Delete document?"
+        message={`"${confirmDelete?.name}" will be permanently deleted along with all its chunks and embeddings.`}
+        confirmLabel="Delete"
+        onConfirm={confirmDeleteDoc}
+        onCancel={() => setConfirmDelete(null)}
       />
     </motion.div>
   );

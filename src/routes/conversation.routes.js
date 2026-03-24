@@ -6,6 +6,7 @@
 const express = require("express");
 const router = express.Router();
 const authMiddleware = require("../middleware/auth.middleware");
+const requirePermission = require("../middleware/permissionMiddleware");
 const db = require("../db");
 const logger = require("../utils/logger");
 
@@ -23,7 +24,7 @@ function isUUID(value) {
 // ------------------------------------------------------------
 // GET /api/conversations
 // ------------------------------------------------------------
-router.get("/conversations", async (req, res) => {
+router.get("/conversations", requirePermission("chat:query"), async (req, res) => {
 
   try {
 
@@ -69,7 +70,7 @@ router.get("/conversations", async (req, res) => {
 // ------------------------------------------------------------
 // GET /api/conversations/document/:documentId
 // ------------------------------------------------------------
-router.get("/conversations/document/:documentId", async (req, res) => {
+router.get("/conversations/document/:documentId", requirePermission("chat:query"), async (req, res) => {
 
   try {
 
@@ -123,7 +124,7 @@ router.get("/conversations/document/:documentId", async (req, res) => {
 // ------------------------------------------------------------
 // GET /api/conversations/:id
 // ------------------------------------------------------------
-router.get("/conversations/:id", async (req, res) => {
+router.get("/conversations/:id", requirePermission("chat:query"), async (req, res) => {
 
   try {
 
@@ -181,7 +182,7 @@ router.get("/conversations/:id", async (req, res) => {
 // ------------------------------------------------------------
 // DELETE /api/conversations/:id
 // ------------------------------------------------------------
-router.delete("/conversations/:id", async (req, res) => {
+router.delete("/conversations/:id", requirePermission("chat:delete"), async (req, res) => {
 
   try {
 

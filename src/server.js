@@ -1,77 +1,71 @@
-require("dotenv").config();
+'use strict';
 
-const app  = require("./app");
-const { pool } = require("./db");
-const logger = require("./utils/logger");
+require('dotenv').config();
+
+const app            = require('./app');
+const { pool }       = require('./db');
+const logger         = require('./utils/logger');
+const { seedAdmin }  = require('./utils/seedAdmin');
 
 const PORT = process.env.PORT || 3000;
 
+// ── ONNX crash guards ─────────────────────────────────────────
+// Only suppress KNOWN non-fatal ONNX log-flush messages.
+// Using broad terms like "onnxruntime" or "blob:" hides real failures.
+const NON_FATAL_PATTERNS = ['DefaultLogger'];
+const isNonFatal = (msg = '') => NON_FATAL_PATTERNS.some(p => msg.includes(p));
 
-// ============================================================
-// Process-level crash guards
-// ONNX/WASM runtime fires background errors after embedding
-// model completes. Without these handlers the process exits,
-// Docker restarts it, and users get 502 Bad Gateway.
-// ============================================================
-
-process.on("uncaughtException", (err) => {
-  const msg = err?.message || "";
-  // Suppress non-fatal ONNX/WASM internal errors
-  if (msg.includes("onnxruntime") ||
-      msg.includes("DefaultLogger") ||
-      msg.includes("blob:")) {
-    logger.warn("[Server] Non-fatal ONNX background error (ignored):", msg);
+process.on('uncaughtException', (err) => {
+  if (isNonFatal(err?.message)) {
+    logger.warn('[Server] Suppressed non-fatal background error:', err.message);
     return;
   }
-  logger.error("[Server] Uncaught exception — exiting:", err);
+  logger.error('[Server] Uncaught exception — exiting:', err);
   process.exit(1);
 });
 
-process.on("unhandledRejection", (reason) => {
-  const msg = reason?.message || String(reason);
-  if (msg.includes("onnxruntime") ||
-      msg.includes("DefaultLogger") ||
-      msg.includes("blob:")) {
-    logger.warn("[Server] Non-fatal ONNX unhandled rejection (ignored):", msg);
+process.on('unhandledRejection', (reason) => {
+  if (isNonFatal(reason?.message || String(reason))) {
+    logger.warn('[Server] Suppressed non-fatal unhandled rejection');
     return;
   }
-  logger.error("[Server] Unhandled rejection:", reason);
+  logger.error('[Server] Unhandled rejection:', reason);
 });
 
-
-// ============================================================
-// Start
-// ============================================================
-
+// ── Bootstrap ─────────────────────────────────────────────────
 async function startServer() {
 
-  // Verify DB is ready before accepting traffic
+  // 1. Verify DB connectivity — fatal if down
   try {
-    await pool.query("SELECT NOW()");
-    console.log("✅ PostgreSQL connected and healthy");
-  } catch (error) {
-    console.error("❌ Database connection failed:", error.message);
+    await pool.query('SELECT NOW()');
+    logger.info('✅ PostgreSQL connected and healthy');
+  } catch (err) {
+    logger.error('❌ Database connection failed:', err.message);
     process.exit(1);
   }
 
-  // Pre-warm embedder before accepting HTTP connections to avoid ONNX native threading collisions
+  // 2. Seed RBAC roles, permissions, admin user, and back-fill role_id
+  //    Non-blocking: seedAdmin catches its own errors internally.
+  //    Server always reaches app.listen() regardless of seed outcome.
+  await seedAdmin();
+
+  // 3. Pre-warm embedding model — eliminates ONNX threading collision on first request
   try {
-    const embed = require("./services/sharedEmbedder");
-    console.log("⏳ Pre-warming embedder model...");
-    await embed.embedSingle("warmup");
-    console.log("✅ Embedder model warmed up safely!");
+    const embed = require('./services/sharedEmbedder');
+    logger.info('⏳ Pre-warming embedder...');
+    await embed.embedSingle('warmup');
+    logger.info('✅ Embedder warmed up.');
   } catch (err) {
-    console.error("❌ Failed to pre-warm embedder:", err);
+    logger.warn('⚠️  Embedder warmup failed (non-fatal):', err.message);
   }
 
+  // 4. Start HTTP server
   app.listen(PORT, () => {
-    console.log(`🚀 NexaSense running on port ${PORT}`);
-    console.log(`Environment: ${process.env.NODE_ENV || "development"}`);
-  }).on("error", (err) => {
-    console.error("❌ Server failed to start:", err.message);
+    logger.info(`🚀 NexaSense running on port ${PORT} [${process.env.NODE_ENV || 'development'}]`);
+  }).on('error', (err) => {
+    logger.error('❌ Server bind failed:', err.message);
     process.exit(1);
   });
-
 }
 
 startServer();

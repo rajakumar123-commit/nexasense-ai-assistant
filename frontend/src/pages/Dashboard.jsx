@@ -106,42 +106,55 @@ function Dashboard() {
 
 
       {/* Recent Queries */}
-
       <div className="mt-12">
+        <h2 className="text-xl font-semibold mb-4 text-slate-100">Recent Queries</h2>
 
-        <h2 className="text-xl font-semibold mb-4">
-          Recent Queries
-        </h2>
-
-
-        {stats?.recentQueries?.length === 0 && (
-
-          <p className="text-slate-400">
-            No recent queries.
-          </p>
-
+        {(!stats?.recentQueries || stats.recentQueries.length === 0) && (
+          <div className="flex flex-col items-center justify-center py-16 text-center">
+            <div className="w-16 h-16 rounded-2xl bg-slate-800 border border-slate-700 flex items-center justify-center mb-4">
+              <svg className="w-8 h-8 text-slate-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+              </svg>
+            </div>
+            <p className="text-slate-300 font-medium mb-1">No queries yet</p>
+            <p className="text-slate-500 text-sm">Upload a document and start asking questions.</p>
+          </div>
         )}
 
-
         <div className="space-y-3">
-
           {stats?.recentQueries?.map((q, i) => (
-
-            <div
+            <motion.div
               key={i}
-              className="bg-slate-800 border border-slate-700 rounded-md p-3 hover:bg-slate-700 transition"
+              initial={{ opacity: 0, x: -10 }}
+              animate={{ opacity: 1, x: 0 }}
+              transition={{ delay: i * 0.06 }}
+              className="bg-slate-900 border border-slate-800 rounded-xl p-4 flex items-start gap-4 hover:border-slate-700 transition group"
             >
-
-              {q.question}
-
-            </div>
-
+              {/* Icon */}
+              <div className="w-8 h-8 rounded-lg bg-blue-500/10 border border-blue-500/20 flex items-center justify-center flex-shrink-0 mt-0.5">
+                <svg className="w-4 h-4 text-blue-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+              </div>
+              {/* Content */}
+              <div className="flex-1 min-w-0">
+                <p className="text-sm text-slate-200 leading-relaxed line-clamp-2">{q.question}</p>
+                {q.created_at && (
+                  <p className="text-xs text-slate-500 mt-1.5">
+                    {new Date(q.created_at).toLocaleString("en-US", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}
+                  </p>
+                )}
+              </div>
+              {/* Response time badge */}
+              {q.response_time_ms && (
+                <span className="text-xs text-slate-500 bg-slate-800 border border-slate-700 px-2 py-0.5 rounded-full flex-shrink-0">
+                  {q.response_time_ms}ms
+                </span>
+              )}
+            </motion.div>
           ))}
-
         </div>
-
       </div>
-
     </motion.div>
 
   );

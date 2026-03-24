@@ -21,6 +21,10 @@ const queryRoutes = require("./routes/query.routes");
 const documentRoutes = require("./routes/document.routes");
 const conversationRoutes = require("./routes/conversation.routes");
 const streamRoutes = require("./routes/stream.routes");
+const adminRoutes = require("./routes/admin.routes");
+
+// ✅ ADD THIS
+const paymentRoutes = require("./routes/payment.routes");
 
 const app = express();
 
@@ -40,15 +44,16 @@ app.use(helmet());
 // Compression
 // ============================================================
 
-// Compress all responses before sending (excluding SSE)
-app.use(compression({
-  filter: (req, res) => {
-    if (req.headers["accept"] === "text/event-stream") {
-      return false; // Do not compress SSE streams
-    }
-    return compression.filter(req, res);
-  }
-}));
+app.use(
+  compression({
+    filter: (req, res) => {
+      if (req.headers["accept"] === "text/event-stream") {
+        return false;
+      }
+      return compression.filter(req, res);
+    },
+  })
+);
 
 // ============================================================
 // CORS
@@ -56,10 +61,12 @@ app.use(compression({
 
 app.use(
   cors({
-    origin: process.env.FRONTEND_URL ? process.env.FRONTEND_URL.split(",") : true,
+    origin: process.env.FRONTEND_URL
+      ? process.env.FRONTEND_URL.split(",")
+      : true,
     methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allowedHeaders: ["Content-Type", "Authorization"],
-    credentials: true
+    credentials: true,
   })
 );
 
@@ -77,8 +84,8 @@ app.use(express.urlencoded({ extended: true, limit: "50mb" }));
 app.use(
   morgan("combined", {
     stream: {
-      write: msg => logger.info(msg.trim())
-    }
+      write: (msg) => logger.info(msg.trim()),
+    },
   })
 );
 
@@ -93,8 +100,8 @@ const globalLimiter = rateLimit({
   legacyHeaders: false,
   message: {
     success: false,
-    error: "Too many requests. Please slow down."
-  }
+    error: "Too many requests. Please slow down.",
+  },
 });
 
 app.use(globalLimiter);
@@ -110,8 +117,8 @@ const authLimiter = rateLimit({
   legacyHeaders: false,
   message: {
     success: false,
-    error: "Too many auth attempts. Try again later."
-  }
+    error: "Too many auth attempts. Try again later.",
+  },
 });
 
 // ============================================================
@@ -123,7 +130,7 @@ app.get("/", (req, res) => {
     status: "ok",
     service: "NexaSense API",
     version: "2.1.0",
-    message: "RAG AI assistant server running"
+    message: "RAG AI assistant server running",
   });
 });
 
@@ -131,7 +138,7 @@ app.get("/api/health", (req, res) => {
   res.json({
     status: "ok",
     timestamp: new Date().toISOString(),
-    uptime: Math.floor(process.uptime()) + "s"
+    uptime: Math.floor(process.uptime()) + "s",
   });
 });
 
@@ -160,6 +167,12 @@ app.use("/api", conversationRoutes);
 // Dashboard
 app.use("/api/dashboard", dashboardRoutes);
 
+// Admin
+app.use("/api/admin", adminRoutes);
+
+// ✅ ADD THIS (PAYMENTS ROUTES)
+app.use("/api/payments", paymentRoutes);
+
 // ============================================================
 // 404 Handler
 // ============================================================
@@ -167,7 +180,7 @@ app.use("/api/dashboard", dashboardRoutes);
 app.use((req, res) => {
   res.status(404).json({
     success: false,
-    error: `Route not found: ${req.method} ${req.originalUrl}`
+    error: `Route not found: ${req.method} ${req.originalUrl}`,
   });
 });
 
@@ -180,7 +193,7 @@ app.use((err, req, res, next) => {
 
   res.status(err.status || 500).json({
     success: false,
-    error: err.message || "Internal server error"
+    error: err.message || "Internal server error",
   });
 });
 

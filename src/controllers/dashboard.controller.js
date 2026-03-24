@@ -1,7 +1,7 @@
 // ============================================================
 // Dashboard Controller
 // NexaSense AI Assistant
-// Provides analytics for the dashboard
+// Provides analytics + user credits
 // ============================================================
 
 const db = require('../db');
@@ -9,13 +9,13 @@ const logger = require('../utils/logger');
 
 // ─────────────────────────────────────────
 // GET /api/dashboard/stats
-// Returns overall usage statistics
+// Returns overall usage statistics + credits
 // ─────────────────────────────────────────
 async function getDashboardStats(req, res) {
   try {
     const userId = req.user.id;
 
-    // Total documents uploaded by user
+    // ── Documents count
     const docsResult = await db.query(
       `SELECT COUNT(*)::int AS total_documents
        FROM documents
@@ -23,7 +23,7 @@ async function getDashboardStats(req, res) {
       [userId]
     );
 
-    // Total chunks across all documents
+    // ── Chunks count
     const chunksResult = await db.query(
       `SELECT COALESCE(SUM(chunk_count),0)::int AS total_chunks
        FROM documents
@@ -31,7 +31,7 @@ async function getDashboardStats(req, res) {
       [userId]
     );
 
-    // Query metrics
+    // ── Query stats
     const queryStats = await db.query(
       `SELECT
           COUNT(*)::int AS total_queries,
@@ -41,7 +41,7 @@ async function getDashboardStats(req, res) {
       [userId]
     );
 
-    // Cache hits
+    // ── Cache stats
     const cacheStats = await db.query(
       `SELECT COUNT(*)::int AS cached_queries
        FROM query_metrics
@@ -49,7 +49,7 @@ async function getDashboardStats(req, res) {
       [userId]
     );
 
-    // 5 most recent questions asked
+    // ── Recent queries
     const recentQueriesResult = await db.query(
       `SELECT question, total_ms, from_cache, created_at
        FROM query_metrics
@@ -59,6 +59,15 @@ async function getDashboardStats(req, res) {
       [userId]
     );
 
+    // ── 🔥 ADD THIS (CREDITS FIX)
+    const creditsResult = await db.query(
+      `SELECT credits FROM users WHERE id = $1`,
+      [userId]
+    );
+
+    const credits = creditsResult.rows[0]?.credits || 0;
+
+    // ── FINAL RESPONSE
     res.json({
       success: true,
       data: {
@@ -67,7 +76,8 @@ async function getDashboardStats(req, res) {
         queries: queryStats.rows[0].total_queries,
         avgResponseMs: queryStats.rows[0].avg_response_ms,
         cachedQueries: cacheStats.rows[0].cached_queries,
-        recentQueries: recentQueriesResult.rows
+        recentQueries: recentQueriesResult.rows,
+        credits // ✅ FIXED
       }
     });
 
@@ -81,9 +91,9 @@ async function getDashboardStats(req, res) {
   }
 }
 
+
 // ─────────────────────────────────────────
 // GET /api/dashboard/documents
-// Returns document analytics
 // ─────────────────────────────────────────
 async function getDocumentAnalytics(req, res) {
   try {
@@ -116,9 +126,9 @@ async function getDocumentAnalytics(req, res) {
   }
 }
 
+
 // ─────────────────────────────────────────
 // GET /api/dashboard/queries
-// Returns recent query performance metrics
 // ─────────────────────────────────────────
 async function getQueryMetrics(req, res) {
   try {
@@ -149,6 +159,7 @@ async function getQueryMetrics(req, res) {
     });
   }
 }
+
 
 // ─────────────────────────────────────────
 

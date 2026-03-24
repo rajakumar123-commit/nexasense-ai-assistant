@@ -86,6 +86,27 @@ async function streamQuery(req, res) {
 
     let convId = conversationId;
 
+    // ---------------------------------------------------------
+    // CREDIT CHECK + DEDUCTION (Atomic — same logic as /api/query)
+    // Without this guard, users bypass credits via the stream endpoint.
+    // ---------------------------------------------------------
+
+    if (userId) {
+      const deductResult = await db.query(
+        `UPDATE users
+         SET credits = credits - 1
+         WHERE id = $1 AND credits > 0
+         RETURNING credits`,
+        [userId]
+      );
+
+      if (deductResult.rowCount === 0) {
+        clearInterval(heartbeatTimer);
+        sendError(res, "No credits remaining. Please upgrade your plan.");
+        return closeStream(res);
+      }
+    }
+
     if (!convId && userId) {
 
       const { rows } = await db.query(
@@ -186,6 +207,15 @@ async function streamQuery(req, res) {
     if (heartbeatTimer) clearInterval(heartbeatTimer);
 
     logger.error("[StreamQuery] Fatal:", error);
+
+    // Refund credit — pipeline failed after atomic deduction
+    const userId = req.user?.id;
+    if (userId) {
+      db.query(
+        `UPDATE users SET credits = credits + 1 WHERE id = $1`,
+        [userId]
+      ).catch((e) => logger.warn("[Credits] Stream refund failed:", e.message));
+    }
 
     sendError(res, error.message);
 

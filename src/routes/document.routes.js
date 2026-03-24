@@ -17,6 +17,7 @@ const {
 } = require("../controllers/document.controller");
 
 const authMiddleware = require("../middleware/auth.middleware");
+const requirePermission = require("../middleware/permissionMiddleware");
 
 
 // ------------------------------------------------------------
@@ -30,22 +31,22 @@ router.use(authMiddleware);
 // Document management
 // ------------------------------------------------------------
 
-router.get("/documents", listDocuments);
+router.get("/documents", requirePermission("chat:query"), listDocuments);
 
-router.get("/documents/:id/status", getDocumentStatus);
+router.get("/documents/:id/status", requirePermission("chat:query"), getDocumentStatus);
 
-router.get("/documents/:id/chunks", getDocumentChunks);
+router.get("/documents/:id/chunks", requirePermission("chat:query"), getDocumentChunks);
 
-router.delete("/documents/:id", deleteDocument);
+router.delete("/documents/:id", requirePermission("doc:delete"), deleteDocument);
 
 
 // ------------------------------------------------------------
 // AI document features
 // ------------------------------------------------------------
 
-router.post("/document/summary", documentSummary);
+router.post("/document/summary", requirePermission("chat:query"), documentSummary);
 
-router.post("/document/suggestions", documentSuggestions);
+router.post("/document/suggestions", requirePermission("chat:query"), documentSuggestions);
 
 
 module.exports = router;

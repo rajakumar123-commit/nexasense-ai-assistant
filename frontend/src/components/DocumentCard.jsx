@@ -33,14 +33,19 @@ function DocumentCard({ document, onChat, onDelete }) {
       animate={{ opacity: 1, y: 0 }}
       whileHover={{ y: -3, boxShadow: "0 8px 30px rgba(0,0,0,0.4)" }}
       transition={{ type: "spring", stiffness: 260, damping: 24 }}
-      className={`relative bg-slate-900 border rounded-xl p-5 flex flex-col gap-3 transition-all ${
+      className={`relative bg-slate-900 border rounded-xl p-5 flex flex-col gap-3 transition-all duration-200 ${
         hasError
           ? "border-red-500/30"
           : isReady
-          ? "border-slate-700/60 hover:border-blue-500/40"
+          ? "border-slate-700/60 hover:border-blue-500/50 hover:ring-2 hover:ring-blue-500/20 hover:shadow-lg hover:shadow-blue-500/10"
           : "border-slate-700/50"
       }`}
     >
+      {/* Processing glow pulse */}
+      {processing && (
+        <div className="absolute inset-0 rounded-xl ring-1 ring-amber-500/30 animate-pulse pointer-events-none" />
+      )}
+
       {/* PDF icon + filename */}
       <div className="flex items-start gap-3">
         <div className={`w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0 ${
@@ -63,7 +68,10 @@ function DocumentCard({ document, onChat, onDelete }) {
           <span className="text-xs text-slate-500">{chunk_count} chunks</span>
         )}
         {processing && (
-          <span className="text-xs text-slate-500 animate-pulse">Processing…</span>
+          <span className="flex items-center gap-1.5 text-xs text-amber-400">
+            <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />
+            Processing…
+          </span>
         )}
       </div>
 

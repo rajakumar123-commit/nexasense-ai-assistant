@@ -2,6 +2,7 @@
 // Query Controller
 // NexaSense AI Assistant v2.3
 // Multi-Document RAG Controller (Production)
+// + Credit System Integrated (SAFE)
 // ============================================================
 
 const { runRetrievalPipeline } = require("../pipelines/retrieval.pipeline");
@@ -9,14 +10,11 @@ const { runRetrievalPipeline } = require("../pipelines/retrieval.pipeline");
 const db = require("../db");
 const logger = require("../utils/logger");
 
-
 // ------------------------------------------------------------
 // Save metrics
 // ------------------------------------------------------------
 async function saveMetrics(userId, documentId, result) {
-
   try {
-
     await db.query(
       `INSERT INTO query_metrics
        (user_id, document_id, question, total_ms, chunks_retrieved, chunks_used, from_cache)
@@ -28,35 +26,27 @@ async function saveMetrics(userId, documentId, result) {
         result.responseTimeMs || 0,
         result.chunksRetrieved || 0,
         result.chunksUsed || 0,
-        result.fromCache || false
+        result.fromCache || false,
       ]
     );
-
   } catch (err) {
-
     logger.warn("[Metrics] Save failed:", err.message);
-
   }
-
 }
-
 
 // ============================================================
 // POST /api/query
 // ============================================================
 async function queryDocument(req, res) {
-
   const start = Date.now();
 
   try {
-
     let { documentId, question, conversationId } = req.body;
 
     const userId = req.user?.id || null;
 
     documentId = String(documentId || "").trim();
-    question   = String(question || "").trim();
-
+    question = String(question || "").trim();
 
     // ---------------------------------------------------------
     // Validation
@@ -64,22 +54,42 @@ async function queryDocument(req, res) {
 
     if (!documentId)
       return res.status(400).json({
-        success:false,
-        error:"documentId required"
+        success: false,
+        error: "documentId required",
       });
 
     if (!question)
       return res.status(400).json({
-        success:false,
-        error:"question required"
+        success: false,
+        error: "question required",
       });
 
     if (question.length > 1000)
       return res.status(400).json({
-        success:false,
-        error:"question too long"
+        success: false,
+        error: "question too long",
       });
 
+    // ---------------------------------------------------------
+    // CREDIT CHECK + DEDUCTION (Atomic — prevents TOCTOU race)
+    // ---------------------------------------------------------
+
+    if (userId) {
+      const deductResult = await db.query(
+        `UPDATE users
+         SET credits = credits - 1
+         WHERE id = $1 AND credits > 0
+         RETURNING credits`,
+        [userId]
+      );
+
+      if (deductResult.rowCount === 0) {
+        return res.status(403).json({
+          success: false,
+          error: "No credits remaining. Please upgrade your plan.",
+        });
+      }
+    }
 
     // ---------------------------------------------------------
     // Ensure document exists
@@ -92,10 +102,9 @@ async function queryDocument(req, res) {
 
     if (!docCheck.rows.length)
       return res.status(404).json({
-        success:false,
-        error:"document not found"
+        success: false,
+        error: "document not found",
       });
-
 
     // ---------------------------------------------------------
     // Ensure conversation exists
@@ -104,18 +113,15 @@ async function queryDocument(req, res) {
     let convId = conversationId;
 
     if (convId) {
-
       const convCheck = await db.query(
         `SELECT id FROM conversations WHERE id=$1`,
         [convId]
       );
 
       if (!convCheck.rows.length) convId = null;
-
     }
 
     if (!convId && userId) {
-
       const { rows } = await db.query(
         `INSERT INTO conversations (user_id, document_id)
          VALUES ($1,$2)
@@ -124,23 +130,18 @@ async function queryDocument(req, res) {
       );
 
       convId = rows[0].id;
-
     }
 
-
     // ---------------------------------------------------------
-    // Run Retrieval Pipeline
+    // Run Retrieval Pipeline (UNCHANGED)
     // ---------------------------------------------------------
 
     let result = await runRetrievalPipeline({
-
-      userId, // enables multi-document retrieval
+      userId,
       documentId,
       question,
-      conversationId: convId || null
-
+      conversationId: convId || null,
     });
-
 
     // ---------------------------------------------------------
     // Ensure safe defaults
@@ -150,97 +151,88 @@ async function queryDocument(req, res) {
       answer: result?.answer || "",
       sources: result?.sources || [],
       pipeline: result?.pipeline || null,
-      responseTimeMs: result?.responseTimeMs || (Date.now() - start),
+      responseTimeMs: result?.responseTimeMs || Date.now() - start,
       chunksRetrieved: result?.chunksRetrieved || 0,
       chunksUsed: result?.chunksUsed || 0,
       tokenEstimate: result?.tokenEstimate || 0,
-      fromCache: result?.fromCache || false
+      fromCache: result?.fromCache || false,
+      provider: result?.provider || "rag",
     };
 
     let provider = "rag";
-
 
     // ---------------------------------------------------------
     // Prevent hallucination (RAG mode only)
     // ---------------------------------------------------------
 
-    // We only enforce the hard "not available" string if the system 
-    // actually tried to perform standard RAG. If the pipeline explicitly 
-    // switched to Gemini Context Mode, it will independently decide whether 
-    // the query is in-domain or out-of-scope, and we must preserve its answer.
-    const isGeminiContextMode = result.provider === "gemini" || result.provider === "groq-fallback";
+    const isGeminiContextMode =
+      result.provider === "gemini" || result.provider === "groq-fallback";
 
     if (!isGeminiContextMode && !result.sources.length) {
-
       result.answer =
         "This information is not available in the uploaded document.";
-
       provider = "rag";
-
     } else if (result.provider) {
-        provider = result.provider;
+      provider = result.provider;
     }
-
 
     // ---------------------------------------------------------
     // Save metrics (non-blocking)
     // ---------------------------------------------------------
 
     if (userId) {
-
       saveMetrics(userId, documentId, {
         question,
-        ...result
-      }).catch(()=>{});
-
+        ...result,
+      }).catch(() => {});
     }
-
 
     logger.info(
       `[Query] ${provider.toUpperCase()} | ` +
-      `${result.responseTimeMs}ms | ` +
-      `sources:${result.sources.length} | ` +
-      `user:${userId || "anonymous"}`
+        `${result.responseTimeMs}ms | ` +
+        `sources:${result.sources.length} | ` +
+        `user:${userId || "anonymous"}`
     );
 
+    // Credit already deducted atomically before the pipeline ran.
 
     // ---------------------------------------------------------
     // Send response
     // ---------------------------------------------------------
 
     return res.status(200).json({
-
-      success:true,
+      success: true,
       question,
-      answer:result.answer,
+      answer: result.answer,
 
-      sources:result.sources,
-      pipeline:result.pipeline,
+      sources: result.sources,
+      pipeline: result.pipeline,
 
       provider,
 
-      fromCache:result.fromCache,
-      responseTimeMs:result.responseTimeMs,
-      tokenEstimate:result.tokenEstimate,
+      fromCache: result.fromCache,
+      responseTimeMs: result.responseTimeMs,
+      tokenEstimate: result.tokenEstimate,
 
-      conversationId:convId
-
+      conversationId: convId,
     });
-
-  }
-
-  catch(error){
-
+  } catch (error) {
     logger.error("[Query] Fatal:", error);
 
+    // Refund credit — pipeline failed after atomic deduction
+    if (req.user?.id) {
+      db.query(
+        `UPDATE users SET credits = credits + 1 WHERE id = $1`,
+        [req.user.id]
+      ).catch((e) => logger.warn("[Credits] Refund failed:", e.message));
+    }
+
     return res.status(500).json({
-      success:false,
-      error:error.message,
-      responseTimeMs:Date.now()-start
+      success: false,
+      error: error.message,
+      responseTimeMs: Date.now() - start,
     });
-
   }
-
 }
 
 module.exports = { queryDocument };

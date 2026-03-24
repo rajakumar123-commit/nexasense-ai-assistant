@@ -10,9 +10,11 @@ import useStream from "../hooks/useStream";
 import ChatMessage from "../components/ChatMessage";
 import ConversationSidebar from "../components/ConversationSidebar";
 import PipelineInspector from "../components/PipelineInspector";
+import { useCreditsContext } from "../context/CreditsContext";
 
 function Chat() {
   const { streamQuery, loading } = useStream();
+  const { credits, refresh: refreshCredits } = useCreditsContext();
   const [searchParams] = useSearchParams();
   const documentId = searchParams.get("documentId");
 
@@ -42,7 +44,7 @@ function Chat() {
 
   const handleSubmit = async (e) => {
     e?.preventDefault();
-    if (!question.trim() || loading) return;
+    if (!question.trim() || loading || credits === 0) return;
     if (!documentId) { setError("No document selected. Go to Workspace and open a document."); return; }
 
     setError("");
@@ -70,6 +72,8 @@ function Chat() {
     try {
       const result = await streamQuery(currentQuestion, documentId, sessionId);
       setPipeline(result.pipeline || null);
+      // Refresh credits in Navbar after each query
+      refreshCredits();
       updateSession(sessionId, s => ({
         ...s,
         messages: s.messages.map(msg =>
@@ -80,13 +84,22 @@ function Chat() {
       }));
     } catch (err) {
       const message = err?.message || "Failed to fetch answer.";
+      const isOutofCredits = message.toLowerCase().includes("credits") || message.toLowerCase().includes("upgrade");
+      
       updateSession(sessionId, s => ({
         ...s,
         messages: s.messages.map(msg =>
-          msg.id === assistantId ? { ...msg, content: `Error: ${message}`, sources: [] } : msg
+          msg.id === assistantId ? { 
+            ...msg, 
+            content: isOutofCredits 
+              ? `[ERROR_CREDITS] ${message}` 
+              : `Error: ${message}`, 
+            sources: [] 
+          } : msg
         )
       }));
-      setError(message);
+      // Only set generic top error if it's NOT a credit error
+      if (!isOutofCredits) setError(message);
     }
   };
 
@@ -177,11 +190,31 @@ function Chat() {
           </AnimatePresence>
 
           {/* Messages */}
-          {messages.map((msg, i) => (
-            <motion.div key={msg.id} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.02 }}>
-              <ChatMessage role={msg.role} content={msg.content} sources={msg.sources} />
-            </motion.div>
-          ))}
+          {messages.map((msg, i) => {
+            if (msg.content && msg.content.startsWith("[ERROR_CREDITS]")) {
+              const errorText = msg.content.replace("[ERROR_CREDITS]", "").trim();
+              return (
+                <motion.div key={msg.id} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.02 }} className="max-w-2xl mx-auto w-full my-6">
+                  <div className="bg-gradient-to-br from-slate-900 to-slate-800 border-2 border-red-500/20 rounded-2xl p-6 text-center shadow-2xl relative overflow-hidden">
+                    <div className="absolute -top-10 -left-10 w-32 h-32 bg-red-500/10 rounded-full blur-2xl pointer-events-none" />
+                    <div className="w-12 h-12 rounded-xl bg-red-500/15 border border-red-500/20 flex items-center justify-center mx-auto mb-4 relative z-10">
+                      <svg className="w-6 h-6 text-red-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
+                    </div>
+                    <h4 className="text-lg font-bold text-slate-100 mb-2 relative z-10">Out of Credits</h4>
+                    <p className="text-slate-400 text-sm mb-6 relative z-10">{errorText}</p>
+                    <Link to="/workspace" className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-semibold bg-white text-slate-900 hover:bg-slate-200 transition shadow-lg relative z-10">
+                      Go to Dashboard to Upgrade
+                    </Link>
+                  </div>
+                </motion.div>
+              );
+            }
+            return (
+              <motion.div key={msg.id} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.02 }}>
+                <ChatMessage role={msg.role} content={msg.content} sources={msg.sources} />
+              </motion.div>
+            );
+          })}
 
           {/* Typing indicator */}
           {loading && (
@@ -204,16 +237,16 @@ function Chat() {
           <form onSubmit={handleSubmit} className="flex gap-3 max-w-4xl mx-auto">
             <textarea
               ref={textareaRef}
-              className="flex-1 bg-slate-800/80 border border-slate-700 rounded-xl p-3.5 resize-none text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500/60 focus:border-blue-500/50 transition min-h-[52px] max-h-32"
-              placeholder={documentId ? "Ask a question about your document…" : "Select a document first…"}
+              className={`flex-1 bg-slate-800/80 border border-slate-700 rounded-xl p-3.5 resize-none text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500/60 focus:border-blue-500/50 transition min-h-[52px] max-h-32 ${credits === 0 ? "opacity-50 cursor-not-allowed" : ""}`}
+              placeholder={credits === 0 ? "You have 0 credits. Upgrade to ask questions." : documentId ? "Ask a question about your document…" : "Select a document first…"}
               value={question}
               onChange={e => setQuestion(e.target.value)}
               onKeyDown={handleKeyDown}
               rows={1}
-              disabled={!documentId}
+              disabled={!documentId || credits === 0}
             />
             <motion.button
-              type="submit" disabled={loading || !question.trim() || !documentId}
+              type="submit" disabled={loading || !question.trim() || !documentId || credits === 0}
               whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.97 }}
               className="flex items-center gap-2 px-5 py-3 rounded-xl bg-gradient-to-r from-blue-600 to-violet-600 hover:from-blue-500 hover:to-violet-500 text-white font-semibold text-sm shadow-lg shadow-blue-500/25 disabled:opacity-40 disabled:cursor-not-allowed transition-all flex-shrink-0">
               {loading ? <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>
@@ -221,7 +254,14 @@ function Chat() {
               <span className="hidden sm:block">{loading ? "Thinking…" : "Ask"}</span>
             </motion.button>
           </form>
-          <p className="text-center text-xs text-slate-600 mt-2">Press Enter to send · Shift+Enter for new line</p>
+          <div className="flex justify-between items-center max-w-4xl mx-auto mt-2 text-xs">
+            <p className="text-slate-600">Press Enter to send · Shift+Enter for new line</p>
+            {credits !== null && (
+              <p className={`font-medium ${credits === 0 ? "text-red-400" : credits <= 10 ? "text-amber-400" : "text-emerald-400/70"}`}>
+                {credits} {credits === 1 ? "credit" : "credits"} remaining
+              </p>
+            )}
+          </div>
         </div>
       </div>
 
