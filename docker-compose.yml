@@ -136,7 +136,7 @@ services:
       backend:
         condition: service_healthy
     ports:
-      - "5175:80"
+      - "80:80"
 
   # ── Test Runner ────────────────────────────────────────────
   test:
