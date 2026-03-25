@@ -2,6 +2,8 @@
 
 <img src="https://capsule-render.vercel.app/api?type=waving&color=0:0f0c29,50:302b63,100:24243e&height=160&section=header&text=NexaSense%20AI&fontSize=64&fontColor=ffffff&fontAlignY=40&desc=Enterprise%20Document%20Intelligence%20%E2%80%94%20Live%20on%20AWS&descAlignY=62&descSize=17&animation=fadeIn" width="100%"/>
 
+[![CI/CD Status](https://img.shields.io/badge/CI%2FCD-Verified-green?style=flat-square)](https://github.com/rajakumar123-commit/nexasense-ai-assistant/actions)
+
 <br/>
 
 [![Live](https://img.shields.io/badge/🌐%20Live%20at%20rajakumar--nexasense--ai.online-brightgreen?style=for-the-badge)](http://rajakumar-nexasense-ai.online)
