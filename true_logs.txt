@@ -1,0 +1,71 @@
+[dotenv@17.3.1] injecting env (0) from .env -- tip: ⚙️  enable debug logging with { debug: true }
+2026-03-24T21:05:47.545Z [INFO] [Redis] Connected
+2026-03-24T21:05:47.629Z [INFO] [Redis] Ready
+2026-03-24T21:05:47.683Z [INFO] ✅ PostgreSQL connected
+2026-03-24T21:05:47.713Z [INFO] ✅ PostgreSQL connected and healthy
+{"ts":"2026-03-24T21:05:47.714Z","level":"info","msg":"[seedAdmin] Starting RBAC + admin seeding..."}
+{"ts":"2026-03-24T21:05:47.757Z","level":"info","msg":"[seedAdmin] Roles verified."}
+{"ts":"2026-03-24T21:05:47.780Z","level":"info","msg":"[seedAdmin] Permissions verified."}
+{"ts":"2026-03-24T21:05:47.794Z","level":"info","msg":"[seedAdmin] Role-permission mapping verified."}
+{"ts":"2026-03-24T21:05:47.816Z","level":"info","msg":"[seedAdmin] Admin already correctly configured. No changes.","email":"admin123@gmail.com"}
+{"ts":"2026-03-24T21:05:47.822Z","level":"info","msg":"[seedAdmin] RBAC seeding complete."}
+2026-03-24T21:05:47.823Z [INFO] ⏳ Pre-warming embedder...
+2026-03-24T21:05:47.825Z [INFO] [SharedEmbedder] Spawning separate OS process for ONNX...
+2026-03-24T21:05:51.116Z [INFO] [SharedEmbedder] Child process model ready
+2026-03-24T21:05:52.240Z [INFO] [SharedEmbedder] Child process model ready
+2026-03-24T21:05:52.285Z [INFO] ✅ Embedder warmed up.
+2026-03-24T21:05:52.298Z [INFO] 🚀 NexaSense running on port 3000 [production]
+2026-03-24T21:05:56.216Z [INFO] ::ffff:127.0.0.1 - - [24/Mar/2026:21:05:56 +0000] "GET /api/health HTTP/1.1" 200 69 "-" "curl/7.88.1"
+2026-03-24T21:06:29.701Z [INFO] ::ffff:127.0.0.1 - - [24/Mar/2026:21:06:29 +0000] "GET /api/health HTTP/1.1" 200 69 "-" "curl/7.88.1"
+2026-03-24T21:07:03.000Z [INFO] ::ffff:127.0.0.1 - - [24/Mar/2026:21:07:03 +0000] "GET /api/health HTTP/1.1" 200 69 "-" "curl/7.88.1"
+2026-03-24T21:07:36.448Z [INFO] ::ffff:127.0.0.1 - - [24/Mar/2026:21:07:36 +0000] "GET /api/health HTTP/1.1" 200 70 "-" "curl/7.88.1"
+2026-03-24T21:08:09.662Z [INFO] ::ffff:127.0.0.1 - - [24/Mar/2026:21:08:09 +0000] "GET /api/health HTTP/1.1" 200 70 "-" "curl/7.88.1"
+2026-03-24T21:08:43.165Z [INFO] ::ffff:127.0.0.1 - - [24/Mar/2026:21:08:43 +0000] "GET /api/health HTTP/1.1" 200 70 "-" "curl/7.88.1"
+2026-03-24T21:09:02.576Z [INFO] 172.18.0.1 - - [24/Mar/2026:21:09:02 +0000] "GET /api/auth/me HTTP/1.1" 401 62 "http://localhost:5175/dashboard" "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36 Edg/146.0.0.0"
+2026-03-24T21:09:05.614Z [INFO] [Auth] User logged in: admin123@gmail.com
+2026-03-24T21:09:05.646Z [INFO] 172.18.0.1 - - [24/Mar/2026:21:09:05 +0000] "POST /api/auth/login HTTP/1.1" 200 751 "http://localhost:5175/login" "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36 Edg/146.0.0.0"
+2026-03-24T21:09:05.782Z [INFO] 172.18.0.1 - - [24/Mar/2026:21:09:05 +0000] "GET /api/dashboard/stats HTTP/1.1" 304 - "http://localhost:5175/dashboard" "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36 Edg/146.0.0.0"
+2026-03-24T21:09:05.801Z [INFO] 172.18.0.1 - - [24/Mar/2026:21:09:05 +0000] "GET /api/dashboard/stats HTTP/1.1" 304 - "http://localhost:5175/dashboard" "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36 Edg/146.0.0.0"
+2026-03-24T21:09:16.545Z [INFO] ::ffff:127.0.0.1 - - [24/Mar/2026:21:09:16 +0000] "GET /api/health HTTP/1.1" 200 70 "-" "curl/7.88.1"
+2026-03-24T21:09:22.938Z [INFO] 172.18.0.1 - - [24/Mar/2026:21:09:22 +0000] "GET /api/documents HTTP/1.1" 304 - "http://localhost:5175/workspace" "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36 Edg/146.0.0.0"
+2026-03-24T21:09:29.589Z [INFO] 172.18.0.1 - - [24/Mar/2026:21:09:29 +0000] "GET /api/documents HTTP/1.1" 304 - "http://localhost:5175/workspace" "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36 Edg/146.0.0.0"
+2026-03-24T21:09:37.161Z [INFO] 172.18.0.1 - - [24/Mar/2026:21:09:37 +0000] "GET /api/admin/users HTTP/1.1" 304 - "http://localhost:5175/admin" "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36 Edg/146.0.0.0"
+2026-03-24T21:09:47.323Z [INFO] 172.18.0.1 - - [24/Mar/2026:21:09:47 +0000] "POST /api/payments/create-order HTTP/1.1" 200 79 "http://localhost:5175/admin" "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36 Edg/146.0.0.0"
+2026-03-24T21:09:49.839Z [INFO] ::ffff:127.0.0.1 - - [24/Mar/2026:21:09:49 +0000] "GET /api/health HTTP/1.1" 200 70 "-" "curl/7.88.1"
+2026-03-24T21:10:23.171Z [INFO] ::ffff:127.0.0.1 - - [24/Mar/2026:21:10:23 +0000] "GET /api/health HTTP/1.1" 200 70 "-" "curl/7.88.1"
+2026-03-24T21:10:56.644Z [INFO] ::ffff:127.0.0.1 - - [24/Mar/2026:21:10:56 +0000] "GET /api/health HTTP/1.1" 200 70 "-" "curl/7.88.1"
+2026-03-24T21:11:30.114Z [INFO] ::ffff:127.0.0.1 - - [24/Mar/2026:21:11:30 +0000] "GET /api/health HTTP/1.1" 200 70 "-" "curl/7.88.1"
+2026-03-24T21:12:03.367Z [INFO] ::ffff:127.0.0.1 - - [24/Mar/2026:21:12:03 +0000] "GET /api/health HTTP/1.1" 200 70 "-" "curl/7.88.1"
+2026-03-24T21:12:36.719Z [INFO] ::ffff:127.0.0.1 - - [24/Mar/2026:21:12:36 +0000] "GET /api/health HTTP/1.1" 200 70 "-" "curl/7.88.1"
+2026-03-24T21:13:10.374Z [INFO] ::ffff:127.0.0.1 - - [24/Mar/2026:21:13:10 +0000] "GET /api/health HTTP/1.1" 200 70 "-" "curl/7.88.1"
+2026-03-24T21:13:43.753Z [INFO] ::ffff:127.0.0.1 - - [24/Mar/2026:21:13:43 +0000] "GET /api/health HTTP/1.1" 200 70 "-" "curl/7.88.1"
+2026-03-24T21:14:17.175Z [INFO] ::ffff:127.0.0.1 - - [24/Mar/2026:21:14:17 +0000] "GET /api/health HTTP/1.1" 200 70 "-" "curl/7.88.1"
+2026-03-24T21:14:50.531Z [INFO] ::ffff:127.0.0.1 - - [24/Mar/2026:21:14:50 +0000] "GET /api/health HTTP/1.1" 200 70 "-" "curl/7.88.1"
+2026-03-24T21:15:23.694Z [INFO] ::ffff:127.0.0.1 - - [24/Mar/2026:21:15:23 +0000] "GET /api/health HTTP/1.1" 200 70 "-" "curl/7.88.1"
+2026-03-24T21:15:57.367Z [INFO] ::ffff:127.0.0.1 - - [24/Mar/2026:21:15:57 +0000] "GET /api/health HTTP/1.1" 200 70 "-" "curl/7.88.1"
+2026-03-24T21:16:30.755Z [INFO] ::ffff:127.0.0.1 - - [24/Mar/2026:21:16:30 +0000] "GET /api/health HTTP/1.1" 200 70 "-" "curl/7.88.1"
+2026-03-24T21:17:03.733Z [INFO] ::ffff:127.0.0.1 - - [24/Mar/2026:21:17:03 +0000] "GET /api/health HTTP/1.1" 200 70 "-" "curl/7.88.1"
+2026-03-24T21:17:37.690Z [INFO] ::ffff:127.0.0.1 - - [24/Mar/2026:21:17:37 +0000] "GET /api/health HTTP/1.1" 200 70 "-" "curl/7.88.1"
+2026-03-24T21:18:11.087Z [INFO] ::ffff:127.0.0.1 - - [24/Mar/2026:21:18:11 +0000] "GET /api/health HTTP/1.1" 200 70 "-" "curl/7.88.1"
+2026-03-24T21:18:44.457Z [INFO] ::ffff:127.0.0.1 - - [24/Mar/2026:21:18:44 +0000] "GET /api/health HTTP/1.1" 200 70 "-" "curl/7.88.1"
+2026-03-24T21:19:17.944Z [INFO] ::ffff:127.0.0.1 - - [24/Mar/2026:21:19:17 +0000] "GET /api/health HTTP/1.1" 200 70 "-" "curl/7.88.1"
+2026-03-24T21:19:51.170Z [INFO] ::ffff:127.0.0.1 - - [24/Mar/2026:21:19:51 +0000] "GET /api/health HTTP/1.1" 200 70 "-" "curl/7.88.1"
+2026-03-24T21:20:24.653Z [INFO] ::ffff:127.0.0.1 - - [24/Mar/2026:21:20:24 +0000] "GET /api/health HTTP/1.1" 200 70 "-" "curl/7.88.1"
+2026-03-24T21:20:30.888Z [ERROR] [Server] Unhandled rejection: db.connect is not a function
+2026-03-24T21:20:47.677Z [INFO] 172.18.0.1 - - [24/Mar/2026:21:20:47 +0000] "POST /api/payments/create-order HTTP/1.1" 200 79 "http://localhost:5175/admin" "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36 Edg/146.0.0.0"
+2026-03-24T21:20:58.145Z [INFO] ::ffff:127.0.0.1 - - [24/Mar/2026:21:20:58 +0000] "GET /api/health HTTP/1.1" 200 70 "-" "curl/7.88.1"
+2026-03-24T21:21:12.812Z [ERROR] [Server] Unhandled rejection: db.connect is not a function
+2026-03-24T21:21:31.516Z [INFO] ::ffff:127.0.0.1 - - [24/Mar/2026:21:21:31 +0000] "GET /api/health HTTP/1.1" 200 70 "-" "curl/7.88.1"
+2026-03-24T21:21:46.557Z [INFO] 172.18.0.1 - - [24/Mar/2026:21:21:46 +0000] "POST /api/payments/verify HTTP/1.1" - - "http://localhost:5175/admin" "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36 Edg/146.0.0.0"
+2026-03-24T21:21:46.561Z [INFO] 172.18.0.1 - - [24/Mar/2026:21:21:46 +0000] "POST /api/payments/verify HTTP/1.1" - - "http://localhost:5175/admin" "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36 Edg/146.0.0.0"
+2026-03-24T21:21:47.090Z [INFO] 172.18.0.1 - - [24/Mar/2026:21:21:47 +0000] "GET /api/auth/me HTTP/1.1" 200 188 "http://localhost:5175/admin" "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36 Edg/146.0.0.0"
+2026-03-24T21:21:47.193Z [INFO] 172.18.0.1 - - [24/Mar/2026:21:21:47 +0000] "GET /api/dashboard/stats HTTP/1.1" 200 131 "http://localhost:5175/admin" "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36 Edg/146.0.0.0"
+2026-03-24T21:21:47.214Z [INFO] 172.18.0.1 - - [24/Mar/2026:21:21:47 +0000] "GET /api/admin/users HTTP/1.1" 200 411 "http://localhost:5175/admin" "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36 Edg/146.0.0.0"
+2026-03-24T21:22:04.939Z [INFO] ::ffff:127.0.0.1 - - [24/Mar/2026:21:22:04 +0000] "GET /api/health HTTP/1.1" 200 70 "-" "curl/7.88.1"
+2026-03-24T21:22:38.308Z [INFO] ::ffff:127.0.0.1 - - [24/Mar/2026:21:22:38 +0000] "GET /api/health HTTP/1.1" 200 70 "-" "curl/7.88.1"
+2026-03-24T21:23:11.710Z [INFO] ::ffff:127.0.0.1 - - [24/Mar/2026:21:23:11 +0000] "GET /api/health HTTP/1.1" 200 70 "-" "curl/7.88.1"
+2026-03-24T21:23:45.059Z [INFO] ::ffff:127.0.0.1 - - [24/Mar/2026:21:23:45 +0000] "GET /api/health HTTP/1.1" 200 70 "-" "curl/7.88.1"
+2026-03-24T21:24:18.466Z [INFO] ::ffff:127.0.0.1 - - [24/Mar/2026:21:24:18 +0000] "GET /api/health HTTP/1.1" 200 71 "-" "curl/7.88.1"
+2026-03-24T21:24:51.452Z [INFO] ::ffff:127.0.0.1 - - [24/Mar/2026:21:24:51 +0000] "GET /api/health HTTP/1.1" 200 71 "-" "curl/7.88.1"
+2026-03-24T21:25:25.299Z [INFO] ::ffff:127.0.0.1 - - [24/Mar/2026:21:25:25 +0000] "GET /api/health HTTP/1.1" 200 71 "-" "curl/7.88.1"
+2026-03-24T21:25:58.356Z [INFO] ::ffff:127.0.0.1 - - [24/Mar/2026:21:25:58 +0000] "GET /api/health HTTP/1.1" 200 71 "-" "curl/7.88.1"

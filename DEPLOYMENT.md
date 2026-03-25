@@ -1,94 +1,124 @@
-# NexaSense Cloud Deployment Guide
+# 🚀 NexaSense AI — 100% Free Production Deployment Guide
 
-This guide explains how to transition NexaSense from a local Docker environment to professional cloud hosting on **Render** and **Vercel**.
-
-## 🏗️ Architecture Overview
-
-| Component | Recommended Platform | Reason |
-| :--- | :--- | :--- |
-| **Frontend (React)** | **Vercel** | Specialized for static assets and CDN delivery. |
-| **Backend API** | **Render (Web Service)** | Supports Docker, persistent disks, and long-running streaming. |
-| **Ingestion Worker** | **Render (Worker)** | Dedicated background processing for heavy WASM tasks. |
-| **ChromaDB** | **Render (Web Service)** | Vector DB requiring persistent disk storage. |
-| **PostgreSQL** | **Render / Neon / Supabase** | Managed relational storage. |
-| **Redis** | **Render / Upstash** | High-performance caching and BullMQ queuing. |
+This guide will walk you through deploying the complete NexaSense AI architecture (PostgreSQL, Redis, ChromaDB, Node.js API, Node.js Worker, and React Frontend) to **AWS EC2 Free Tier ($0.00/month)**.
 
 ---
 
-## 💰 100% Free Deployment Tier
+## Phase 1: Set Up Your AWS Account & Server
+We need a free Virtual Private Server (VPS) to host your Docker containers.
 
-To run NexaSense completely for free, use this "Hybrid" stack:
+### 1. Create your AWS Account
+1. Go to [aws.amazon.com/free](https://aws.amazon.com/free) and click **Create a Free Account**.
+2. Fill in your details. You will need a debit/credit card for identity verification. 
+   *(Note: AWS will temporarily deduct a ₹2 holding fee and refund it instantly. You will NOT be charged monthly if you stick to the Free Tier).*
 
-1. **Frontend**: [Vercel](https://vercel.com) (Free)
-2. **PostgreSQL**: [Neon.tech](https://neon.tech) (Free Serverless)
-3. **Redis**: [Upstash](https://upstash.com) (Free Serverless)
-4. **Backend/Worker**: [Render](https://render.com) (Free Tier - 512MB RAM)
-
-### ⚠️ Critical Optimization for Free Tier
-Running `Transformers.js` locally requires **2GB RAM**, which is not available on Render's free tier. 
-**Solution**: Switch your embedding provider to the **Gemini Embeddings API**. This offloads the mathematical heavy-lifting to Google's cloud (for free), allowing your backend to run on less than **150MB of RAM**!
-
----
-
-## 🚀 Step 1: Managed Databases
-
-Before deploying the code, set up your managed database instances:
-1. **PostgreSQL**: Create a new database. Copy the **External/Internal Connection String**.
-2. **Redis**: Create a high-performance Redis instance. Copy the **Redis URL**.
-
----
-
-## 📦 Step 2: ChromaDB (Vector Search)
-
-NexaSense requires a persistent vector store.
-1. Create a **New > Web Service** on Render.
-2. Search for the public Docker image: `chromadb/chroma`.
-3. Under **Advanced**, add a **Persistent Disk** (2GB) mounted at `/data`.
-4. Add Environment Variable: `PERSIST_DIRECTORY=/data`.
+### 2. Launch an EC2 Instance (Server)
+1. Once logged in, search for **EC2** in the top search bar.
+2. Go to the EC2 Dashboard and click the orange **Launch Instance** button.
+3. **Name:** Type `nexasense-server`.
+4. **OS Images:** Click on **Ubuntu** and leave it on *Ubuntu 22.04 LTS* or *24.04 LTS (Free Tier Eligible)*.
+5. **Instance Type:** Select `t2.micro` or `t3.micro` *(This gives you 1GB RAM for 12 months free)*.
+6. **Key Pair:** Click **Create new key pair**, name it `nexasense-key`, select **RSA** and **.pem**, and click download. Keep this `.pem` file safe—you need it to log in!
+7. **Network Settings:** Check the boxes to allow:
+   * Allow SSH traffic from Anywhere
+   * Allow HTTP traffic from the internet
+   * Allow HTTPS traffic from the internet
+8. **Storage:** Increase the default 8GB hard drive to **20GB** *(Free tier allows up to 30GB)*.
+9. Click **Launch Instance** in the bottom right.
 
 ---
 
-## ⚙️ Step 3: Backend & Worker
+## Phase 2: Connect to Your Server
+Now we need to log into the terminal of the remote PC we just rented.
 
-### Backend API
-- **Root Directory**: `.` (Root)
-- **Start Command**: `npm start`
-- **Environtment Variables**:
-  - `DATABASE_URL`: (Your RDS/Neon URL)
-  - `REDIS_URL`: (Your Redis URL)
-  - `CHROMA_URL`: (The public URL of your Chroma service)
-  - `GROQ_API_KEY`: (Your Key)
-  - `GEMINI_API_KEY`: (Your Key)
+1. Open your terminal (or PowerShell on Windows).
+2. Use the `ssh` command and point it to the `.pem` file you downloaded. 
+   *(Go to the EC2 Dashboard > "Instances", click on your server, and copy the **Public IPv4 address**)*.
+   
+```bash
+# Example SSH command:
+ssh -i "path/to/your/nexasense-key.pem" ubuntu@YOUR-PUBLIC-IP-ADDRESS
+```
 
-### Ingestion Worker
-- Create a **New > Background Worker**.
-- **Start Command**: `npm run worker`
-- Use the same environment variables as the API.
+When it asks "Are you sure you want to continue connecting?", type `yes`.
 
 ---
 
-## 🖥️ Step 4: Frontend (Vercel)
+## Phase 3: The Secret Sauce — Add a Swapfile
+Your free server only has 1GB of RAM. The AI Embedding models and ChromaDB will instantly crash because they need 3GB+ of memory. 
 
-1. Import your repository to **Vercel**.
-2. Set **Root Directory** to `frontend`.
-3. **Build Command**: `npm run build`
-4. **Output Directory**: `dist`
-5. **Environment Variable**: `VITE_API_BASE_URL` set to your Render API URL.
+To fix this, we will convert 4GB of your SSD Hard Drive into "Fake RAM" (called a Swapfile). **Run these commands one by one:**
+
+```bash
+sudo fallocate -l 4G /swapfile
+sudo chmod 600 /swapfile
+sudo mkswap /swapfile
+sudo swapon /swapfile
+
+# Make it permanent so it survives server reboots:
+echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab
+```
+*(Verify it worked by typing `free -m`. You should see `Swap` showing about 4000MB).*
 
 ---
 
-## 🛠️ Critical Cloud Optimizations
+## Phase 4: Install Docker & Download Your Code
 
-### 🧮 RAM Requirements
-The **Ingestion Worker** and **Backend** perform heavy WASM operations. 
-- **Minimum RAM**: 2GB per service.
-- **CPU**: At least 1 vCPU for decent embedding speed.
+Now we need the tools to run the project.
 
-### 💾 Model Caching
-To avoid downloading the 500MB embedding model on every deploy:
-1. Mount a **Persistent Disk** to the Worker/Backend (e.g., at `/data`).
-2. Set Environment Variable: `TRANSFORMERS_CACHE=/data/models`.
+### 1. Install Git and Docker
+```bash
+sudo apt update
+sudo apt install -y git docker.io docker-compose
+```
 
-### 🔏 Production Security
-- Change your `JWT_SECRET` in the production environment variables.
-- Ensure `CORS_ORIGIN` in the backend is restricted to your Vercel URL.
+### 2. Download Your Code
+Clone the clean repository you just pushed to GitHub. (Replace with your actual GitHub link).
+```bash
+git clone https://github.com/YourUsername/YourRepoName.git
+cd YourRepoName
+```
+
+### 3. Create the Production Environment File
+Because we specifically blocked `.env` from GitHub for security, you must recreate it on your live server!
+```bash
+cp .env.example .env
+nano .env
+```
+
+**What to edit in `nano`:**
+1. Leave all the database links (`CHROMA_URL`, `DATABASE_URL`) exactly as they are.
+2. Paste your actual **Gemini** and **Groq** AI Keys.
+3. Paste your **Razorpay** Key and Secret.
+4. Set a long random password for `JWT_SECRET` and `JWT_REFRESH_SECRET`.
+5. Set `NODE_ENV=production`.
+
+*(To save the file: Press `CTRL + X`, then press `Y`, then press `Enter/Return`).*
+
+---
+
+## Phase 5: Launch the NexaSense Ecosystem
+Everything is configured. It’s time to start the engine!
+
+```bash
+sudo docker-compose up --build -d
+```
+
+This will take 3-5 minutes on the first run. Docker will:
+- Set up PostgreSQL and vector tools.
+- Install Redis and ChromaDB.
+- Build your Node.js backend.
+- Build your React frontend into a highly optimized Nginx website.
+
+Once it finishes, type `sudo docker ps` to verify all 6 containers are running.
+
+---
+
+## Phase 6: You Are Live! 🍾
+Open your web browser and navigate directly to your server's public IP Address:
+**http://YOUR-PUBLIC-IP-ADDRESS**
+
+You will instantly see the beautiful NexaSense 10/10 layout!
+
+### Important Architecture Note for AWS Free Tier:
+Because the server is using an SSD Swapfile to handle the AI memory instead of real RAM, document uploading and chunking may take **slightly longer** (20-40 seconds) the very first time you upload a PDF. This is perfectly normal and a worthy trade-off for zero costs!
