@@ -8,6 +8,7 @@ const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
 const { pool } = require('../db');          // ← pool, not db.query
 const logger = require('../utils/logger');
+const { sendWelcomeEmail } = require('../utils/email.service');
 
 const SALT_ROUNDS = 12;
 const ACCESS_TTL = process.env.JWT_EXPIRES_IN || '15m';
@@ -78,6 +79,9 @@ async function signup(req, res) {
     const user = rows[0];
 
     logger.info(`[Auth] New user registered: ${user.email}`);
+
+    // ✅ Fire-and-forget welcome email (non-blocking)
+    sendWelcomeEmail(user.email, user.full_name);
 
     const refreshToken = generateRefreshToken(user.id);
 
