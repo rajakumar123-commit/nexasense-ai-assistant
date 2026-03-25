@@ -1,0 +1,3 @@
+rajakumar-nexasense-ai.online {
+    reverse_proxy frontend:80
+}
