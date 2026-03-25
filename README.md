@@ -16,6 +16,8 @@
 [![Redis](https://img.shields.io/badge/Redis-7-DC382D?style=flat-square&logo=redis&logoColor=white)](#)
 [![Docker](https://img.shields.io/badge/Docker-6%20containers-2496ED?style=flat-square&logo=docker&logoColor=white)](#)
 [![AWS](https://img.shields.io/badge/AWS%20EC2-t3.micro-FF9900?style=flat-square&logo=amazonaws&logoColor=white)](#)
+[![Actions](https://img.shields.io/badge/GitHub%20Actions-Automated-2088FF?style=flat-square&logo=githubactions&logoColor=white)](#)
+[![Nodemailer](https://img.shields.io/badge/Nodemailer-Welcomer-339933?style=flat-square&logo=nodemailer&logoColor=white)](#)
 [![License](https://img.shields.io/badge/License-MIT-yellow?style=flat-square)](#-license)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-hotpink?style=flat-square&logo=github)](#-contributing)
 
@@ -139,6 +141,8 @@ NexaSense is a full-stack **AI Document Intelligence** platform. Users register,
 | Containers | Docker, Docker Compose (6 services) |
 | Cloud | AWS EC2 Ubuntu 22.04, t3.micro |
 | Domain | Hostinger `.online` TLD |
+| CI/CD | GitHub Actions (Auto-deploy on push) |
+| Email | Nodemailer + Gmail SMTP |
 
 [↑ Back to Top](#-table-of-contents)
 
@@ -322,6 +326,7 @@ sequenceDiagram
 | **Razorpay Checkout** | In-app modal — 1,000 credits for ₹699; order always created server-side |
 | **Atomic Credit Update** | `SELECT … FOR UPDATE` inside a transaction prevents double-crediting race conditions |
 | **Zero-Credit Guard** | "Ask" button disabled at 0; prominent upgrade card replaces the input |
+| **Welcome Emails** | Automatic branded HTML email sent to new users via Nodemailer |
 
 </details>
 
@@ -730,6 +735,9 @@ sudo docker-compose up -d --force-recreate
 - [x] Razorpay credit billing with atomic DB transactions
 - [x] Three.js 3D pipeline animation + Pipeline Inspector + SSE streaming
 - [x] AWS EC2 + Docker Compose deployment + Hostinger DNS
+- [x] LangChain persistent cross-session conversational memory
+- [x] **New**: GitHub Actions CI/CD Pipeline (Auto-deploy)
+- [x] **New**: Automatic Welcome Email Notifications (Nodemailer)
 
 **Planned 🔮**
 
@@ -738,7 +746,6 @@ sudo docker-compose up -d --force-recreate
 - [ ] Web-scraping RAG — paste a URL, auto-index the page
 - [ ] S3 for scalable file storage (replace local `/uploads`)
 - [ ] Razorpay webhook for automated billing reconciliation
-- [ ] LangChain persistent cross-session conversational memory
 
 [↑ Back to Top](#-table-of-contents)
 
