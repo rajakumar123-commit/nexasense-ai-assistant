@@ -6,7 +6,7 @@
 
 <br/>
 
-[![Live](https://img.shields.io/badge/🌐%20Live%20at%20rajakumar--nexasense--ai.online-brightgreen?style=for-the-badge)](http://rajakumar-nexasense-ai.online)
+[![Live](https://img.shields.io/badge/🌐%20Live%20at%20rajakumar--nexasense--ai.online-brightgreen?style=for-the-badge)](https://rajakumar-nexasense-ai.online)
 
 <br/>
 
@@ -31,7 +31,7 @@ Razorpay credit billing, and a complete microservices deployment on AWS EC2.
 
 <br/>
 
-[**🌐 Try It Live →**](http://rajakumar-nexasense-ai.online)&nbsp;&nbsp;·&nbsp;&nbsp;[Report Bug](https://github.com/rajakumar123-commit/nexasense-ai-assistant/issues)&nbsp;&nbsp;·&nbsp;&nbsp;[Request Feature](https://github.com/rajakumar123-commit/nexasense-ai-assistant/issues)
+[**🌐 Try It Live →**](https://rajakumar-nexasense-ai.online)&nbsp;&nbsp;·&nbsp;&nbsp;[Report Bug](https://github.com/rajakumar123-commit/nexasense-ai-assistant/issues)&nbsp;&nbsp;·&nbsp;&nbsp;[Request Feature](https://github.com/rajakumar123-commit/nexasense-ai-assistant/issues)
 
 </div>
 
@@ -117,9 +117,9 @@ NexaSense is a full-stack **AI Document Intelligence** platform. Users register,
 
 | | URL |
 |---|---|
-| **Production** | [http://rajakumar-nexasense-ai.online](http://rajakumar-nexasense-ai.online) |
-| **API** | `http://rajakumar-nexasense-ai.online/api` |
-| **Admin demo** | `admin123@gmail.com` |
+| **Production** | [https://rajakumar-nexasense-ai.online](https://rajakumar-nexasense-ai.online) |
+| **API** | `https://rajakumar-nexasense-ai.online/api` |
+| **Health check** | `https://rajakumar-nexasense-ai.online/api/health` |
 
 [↑ Back to Top](#-table-of-contents)
 
@@ -199,38 +199,33 @@ graph LR
 
 ## 5. 🧠 RAG Pipeline
 
-Every query runs through `retrieval.pipeline.js`. **Groq (Llama 3.3-70B)** handles speed-critical steps; **Gemini 1.5 Pro** handles reasoning steps. A cache hit at Step 2 or 3 short-circuits everything downstream.
+Every query runs through `retrieval.pipeline.js`. **Groq (Llama 3.3-70B)** is used for speed; **Gemini 1.5 Pro** for reasoning. A cache hit short-circuits everything downstream.
 
 ```mermaid
 flowchart TD
-    A([User query]) --> B[1 · Normalize\ntrim · lowercase · standardize]
-    B --> C{2 · Exact cache\nnode-cache LRU lookup}
-    C -- HIT --> Z([Return instantly — 0 LLM calls])
-    C -- MISS --> D{3 · Semantic cache\nRedis vector similarity}
+    A([User query]) --> B[Normalize\ntrim · lowercase]
+    B --> C{Step 0\nExact cache hit?\nnode-cache LRU}
+    C -- HIT --> Z([Return — 0 LLM calls])
+    C -- MISS --> D{Step 1\nSemantic cache hit?\nRedis vector}
     D -- HIT --> Z
-    D -- MISS --> E[4 · Load conversation history\nPostgreSQL]
-    E --> F[5 · Groq pre-processing\nspell-fix · history-aware rewrite · 3× expansion]
-    F --> G[6 · HyDE generation\nGroq writes a hypothetical answer\nto sharpen embedding signal]
-    G --> H[7 · Parallel hybrid search]
-
-    subgraph search ["Parallel Search"]
-        H --> I[ChromaDB\ncosine similarity on HyDE + variants]
-        H --> J[PostgreSQL\nto_tsvector full-text on all variants]
-    end
-
-    I --> K[8 · Merge + deduplicate chunks]
-    J --> K
-    K --> L[9 · Semantic reranker\nscore every chunk · keep top-7]
-    L --> M{10 · Chunks found?}
-    M -- No --> N[Domain classifier\nGemini — is query in-domain?]
-    N --> O([Graceful rejection\nor general-knowledge answer])
-    M -- Yes --> P[11 · Context compression\nGroq strips boilerplate from chunks]
-    P --> Q[12 · Answer generation\nGroq / Llama-3 from compressed context]
-    Q --> R[13 · Gemini refinement\nlogical structure + factual validation]
-    R --> S[14 · Self-reflection\nGemini scores own confidence 0–100%]
-    S --> T[15 · Cache + persist\nRedis semantic cache · PostgreSQL history]
-    T --> U([Stream answer to UI via SSE])
+    D -- MISS --> E[Load conversation history\nfrom PostgreSQL]
+    E --> F["Step 2 · Groq — 1 API call\nSpell-fix · standalone rewrite\n3x query expansion · HyDE hypothetical doc"]
+    F --> G[Step 3 · Vector search\nChromaDB cosine · HyDE + all variants\nParallel Promise.all]
+    F --> H[Step 4 · Keyword search\nPostgreSQL to_tsvector\nSkipped in multi-doc userId mode]
+    G --> I[Step 5 · Await all\nDeduplicate · cap at 20 chunks]
+    H --> I
+    I --> J[Step 6 · Rerank\nScore all chunks · keep top 7]
+    J --> K{Chunks found?}
+    K -- No --> L[Gemini context mode fallback\nDomain answer or graceful rejection]
+    L --> Z2([Return fallback answer])
+    K -- Yes --> M[Step 7 · Context compression\nGroq strips boilerplate]
+    M --> N[Step 8 · Generate answer\nGroq Llama-3.3-70B + compressed context]
+    N --> O[Step 9 · Gemini reasoning\nRefinement + factual validation]
+    O --> P[Self-reflection\nGemini confidence score 0-100%]
+    P --> Q[Step 10 · Build result\nSave conversation · LRU + Redis cache\nRecord query metrics]
+    Q --> R([Return answer + sources])
 ```
+
 
 [↑ Back to Top](#-table-of-contents)
 
@@ -490,15 +485,28 @@ sequenceDiagram
 
 **Payment verification chain:**
 
-```
-Client pays via Razorpay SDK (browser)
-  └─▶ Server receives razorpay_payment_id + razorpay_order_id + razorpay_signature
-        └─▶ crypto.createHmac('sha256', secret).update(orderId|paymentId) === signature?
-              └─▶ BEGIN TRANSACTION
-                    └─▶ SELECT credits FROM users WHERE id = ? FOR UPDATE
-                          └─▶ UPDATE users SET credits = credits + 1000
-                                └─▶ INSERT INTO transactions (audit log)
-                                      └─▶ COMMIT
+```mermaid
+sequenceDiagram
+    participant U as 👤 User (Browser)
+    participant RZ as 💳 Razorpay SDK
+    participant BE as ⚙️ Backend API
+    participant DB as 🗄️ PostgreSQL
+
+    U->>BE: POST /api/payment/create-order
+    BE->>RZ: Create order (amount, currency)
+    RZ-->>BE: { razorpay_order_id }
+    BE-->>U: Return order_id
+    U->>RZ: Open Razorpay Checkout popup
+    RZ-->>U: User pays ₹699
+    RZ-->>U: { payment_id, order_id, signature }
+    U->>BE: POST /api/payment/verify
+    BE->>BE: HMAC-SHA256 signature check
+    BE->>DB: BEGIN TRANSACTION
+    DB->>DB: SELECT credits FOR UPDATE
+    DB->>DB: UPDATE credits + 1000
+    DB->>DB: INSERT transactions (audit log)
+    DB->>BE: COMMIT
+    BE-->>U: 200 OK — +1,000 credits added
 ```
 
 [↑ Back to Top](#-table-of-contents)
@@ -507,20 +515,23 @@ Client pays via Razorpay SDK (browser)
 
 ## 11. 💳 Credit & Payment System
 
-```
-Registration ──────────────────────────────────── +100 free credits
-                                                        │
-                          ┌─────────────────────────────┤
-                          │                             ▼
-                   Each RAG query              Credits hit 0
-                   costs 1 credit           Ask button disabled
-                                             Upgrade CTA shown
-                                                        │
-                                         POST /api/payment/create-order
-                                              Razorpay popup opens
-                                              User pays ₹699
-                                         POST /api/payment/verify
-                                              +1,000 credits (atomic)
+```mermaid
+flowchart TD
+    A([User Registers]) -->|+100 free credits| B[Credits Added to Account]
+    B --> C{Credits > 0?}
+    C -- Yes --> D[Submit RAG Query − 1 credit]
+    D --> E{Credits remaining?}
+    E -- Yes --> C
+    E -- No / Zero --> F[🚫 Ask Button Disabled]
+    F --> G[Low-Credit Banner Shown]
+    G --> H[User Clicks Upgrade]
+    H --> I[POST /api/payment/create-order]
+    I --> J[💳 Razorpay Popup Opens]
+    J --> K[User Pays ₹699]
+    K --> L[POST /api/payment/verify]
+    L --> M[HMAC Signature Verified]
+    M --> N[(DB: +1,000 credits atomic)]
+    N --> C
 ```
 
 | Plan ID | Credits | Price |
@@ -697,14 +708,32 @@ sudo chmod 600 /swapfile && sudo mkswap /swapfile && sudo swapon /swapfile
 # 3. Docker
 sudo apt update && sudo apt install -y docker.io docker-compose
 sudo systemctl enable docker
-
-# 4. Clone + configure
+```bash
+# On your server (first time setup)
 git clone https://github.com/rajakumar123-commit/nexasense-ai-assistant.git
 cd nexasense-ai-assistant
 nano .env  # production values
+sudo docker compose up -d
+```
 
-# 5. Deploy
-sudo docker-compose up -d
+**CI/CD Auto-Deploy Workflow:**
+
+```mermaid
+sequenceDiagram
+    participant Dev as 🖥️ Developer (local)
+    participant GH as 🐙 GitHub
+    participant GA as ⚙️ GitHub Actions
+    participant EC2 as ☁️ AWS EC2
+
+    Dev->>GH: git push origin main
+    GH->>GA: Trigger workflow (deploy.yml)
+    GA->>GA: Checkout code
+    GA->>EC2: SSH into server (using EC2_SSH_KEY secret)
+    EC2->>EC2: git pull origin main
+    EC2->>EC2: docker compose up -d --build
+    EC2-->>GA: Exit code 0 ✔️
+    GA-->>GH: 🟢 Deployment Succeeded
+    GH-->>Dev: Actions badge turns green
 ```
 
 **DNS records (Hostinger):**
@@ -714,11 +743,34 @@ sudo docker-compose up -d
 | `A` | `@` | `16.171.19.129` | 300 |
 | `CNAME` | `www` | `rajakumar-nexasense-ai.online` | 300 |
 
-**Redeploy after a code push:**
+**CI/CD Auto-Deploy Workflow (`deploy.yml`):**
+
+```mermaid
+sequenceDiagram
+    participant Dev as Developer (local)
+    participant GH as GitHub
+    participant GA as GitHub Actions Runner
+    participant EC2 as AWS EC2 Server
+
+    Dev->>GH: git push origin main
+    GH->>GA: Trigger deploy job on ubuntu-latest
+    GA->>GA: Write EC2_SSH_KEY secret to ~/.ssh/id_rsa
+    GA->>GA: chmod 600 ~/.ssh/id_rsa
+    GA->>EC2: SSH -i id_rsa EC2_USERNAME@EC2_HOST
+    EC2->>EC2: cd nexasense-ai-assistant
+    EC2->>EC2: git pull origin main
+    EC2->>EC2: sudo docker-compose down
+    EC2->>EC2: sudo docker-compose up -d --build
+    EC2-->>GA: Exit code 0
+    GA-->>GH: Deploy job succeeded
+```
+
+For a manual redeploy:
 
 ```bash
+cd ~/nexasense-ai-assistant
 git pull origin main
-sudo docker-compose up -d --force-recreate
+sudo docker-compose up -d --build
 ```
 
 [↑ Back to Top](#-table-of-contents)
@@ -736,16 +788,18 @@ sudo docker-compose up -d --force-recreate
 - [x] Three.js 3D pipeline animation + Pipeline Inspector + SSE streaming
 - [x] AWS EC2 + Docker Compose deployment + Hostinger DNS
 - [x] LangChain persistent cross-session conversational memory
-- [x] **New**: GitHub Actions CI/CD Pipeline (Auto-deploy)
-- [x] **New**: Automatic Welcome Email Notifications (Nodemailer)
+- [x] **New**: GitHub Actions CI/CD Pipeline (Auto-deploy on every push)
+- [x] **New**: Automatic Welcome Email Notifications (Nodemailer + Gmail SMTP)
+- [x] **New**: HTTPS via Caddy reverse proxy (auto-SSL)
+- [x] **New**: Private GitHub Repository with SSH Deploy Key
 
 **Planned 🔮**
 
-- [ ] HTTPS via Let's Encrypt + Nginx reverse proxy
 - [ ] Multi-format ingestion — `.docx`, `.xlsx`, `.txt`, images (Tesseract OCR)
 - [ ] Web-scraping RAG — paste a URL, auto-index the page
 - [ ] S3 for scalable file storage (replace local `/uploads`)
 - [ ] Razorpay webhook for automated billing reconciliation
+- [ ] Rate limiting per API route (Redis-backed)
 
 [↑ Back to Top](#-table-of-contents)
 
@@ -793,7 +847,7 @@ git push origin feature/your-feature
 
 ## 22. 📄 License
 
-Licensed under the [MIT License](LICENSE). © 2024 Rajakumar.
+Licensed under the [MIT License](LICENSE). © 2025 Rajakumar.
 
 ---
 
@@ -801,7 +855,7 @@ Licensed under the [MIT License](LICENSE). © 2024 Rajakumar.
 
 [![Star on GitHub](https://img.shields.io/github/stars/rajakumar123-commit/nexasense-ai-assistant?style=for-the-badge&logo=github&color=FFD700)](https://github.com/rajakumar123-commit/nexasense-ai-assistant)
 
-*Built with ❤️ and 20 days of focused engineering by [Rajakumar](https://github.com/rajakumar123-commit)*
+*Built with ❤️ and relentless engineering by [Rajakumar](https://github.com/rajakumar123-commit)*
 
 <img src="https://capsule-render.vercel.app/api?type=waving&color=0:24243e,50:302b63,100:0f0c29&height=100&section=footer" width="100%"/>
 
