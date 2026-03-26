@@ -10,6 +10,10 @@ BEGIN;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS credits INTEGER DEFAULT 0;
 UPDATE users SET credits = 100 WHERE credits IS NULL OR credits = 0;
 
+-- 2. Add original_name to documents (Required for Scraper)
+ALTER TABLE documents ADD COLUMN IF NOT EXISTS original_name VARCHAR(255);
+UPDATE documents SET original_name = file_name WHERE original_name IS NULL;
+
 -- 2. Create Transactions Table
 CREATE TABLE IF NOT EXISTS transactions (
     id                  UUID         PRIMARY KEY DEFAULT gen_random_uuid(),

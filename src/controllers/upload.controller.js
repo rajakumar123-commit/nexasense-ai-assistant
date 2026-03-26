@@ -226,11 +226,13 @@ async function scrapeUrl(req, res) {
     });
 
   } catch (error) {
-    logger.error("[Scrape] Fatal:", error.message);
+    logger.error(`[Scrape] Fatal Error | url:${url} | user:${userId} | msg:${error.message}`);
+    logger.error(error.stack);
+    
     return res.status(500).json({
       success: false,
-      error: "Scrape failed",
-      details: error.message
+      error: `Scrape failed: ${error.message}`,
+      details: error.stack
     });
   }
 }
