@@ -126,7 +126,7 @@ function Workspace() {
           onClick={() => setShowUpload(true)}
           className="bg-emerald-500 hover:bg-emerald-600 px-4 py-2 rounded-md font-medium transition transform hover:-translate-y-0.5"
         >
-          Upload PDF
+          Upload Document
         </button>
       </div>
 
@@ -134,7 +134,7 @@ function Workspace() {
       {dragging && (
         <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-40">
           <div className="border-2 border-dashed border-emerald-400 p-12 rounded-xl text-center animate-scale-in">
-            <p className="text-lg font-medium">Drop PDF to Upload</p>
+            <p className="text-lg font-medium">Drop File to Upload</p>
           </div>
         </div>
       )}
@@ -165,14 +165,14 @@ function Workspace() {
             </svg>
           </div>
           <h3 className="text-xl font-semibold text-slate-200 mb-2">No documents yet</h3>
-          <p className="text-slate-500 text-sm mb-2">Upload a PDF to get started with AI-powered Q&A.</p>
-          <p className="text-slate-600 text-xs mb-8">💡 Tip: You can also drag &amp; drop a PDF anywhere on this page</p>
+          <p className="text-slate-500 text-sm mb-2">Upload a PDF, DOCX, or TXT file to get started with AI-powered Q&A.</p>
+          <p className="text-slate-600 text-xs mb-8">💡 Tip: You can also drag &amp; drop a file anywhere on this page</p>
           <button
             onClick={() => setShowUpload(true)}
             className="flex items-center gap-2 px-6 py-3 rounded-xl font-semibold text-sm bg-gradient-to-r from-emerald-600 to-blue-600 hover:from-emerald-500 hover:to-blue-500 text-white shadow-lg shadow-emerald-500/25 transition-all"
           >
             <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
-            Upload Your First PDF
+            Upload Your First Document
           </button>
         </motion.div>
       )}

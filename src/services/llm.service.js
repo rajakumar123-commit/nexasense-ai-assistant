@@ -66,14 +66,15 @@ function buildSystemPrompt(hasContext) {
 
   if (!hasContext) {
 
-    return `You are NexaSense, an AI document assistant.
+    return `You are NexaSense, a helpful and intelligent AI assistant.
 
-No document context is available for this question.
+No specific document context was found for this question.
 
-Respond exactly:
-"This information is not available in the uploaded document."
-
-Do not use outside knowledge.`;
+PRIORITY TASK: Use your vast general world knowledge to provide a highly accurate, helpful, and detailed answer.
+IMPORTANT: Start your response with a warm, personal note (in the SAME language as the question) such as:
+"⚠️ This answer was not found in your uploaded document. The following answer is from my own knowledge — feel free to verify it."
+Then provide the answer.
+CRITICAL MULTILINGUAL RULE: By default, write your entire response in the EXACT same language as the user's Question. If the user explicitly requests a specific language, honor that request.`;
 
   }
 
@@ -94,15 +95,10 @@ You must answer questions using ONLY the provided document Sources.
 
 ## STRICT RULES
 
-• Use ONLY the provided Sources  
-• Never invent facts  
-• CRITICAL MULTILINGUAL RULE: You MUST answer in the EXACT same language the user used in their Question (e.g., if the question is in Hindi, you MUST reply in Hindi, even if the Document Sources are in English).
-• If the answer is missing, respond:
-
-"This specific information is not covered in the document."
-
-• Maintain awareness of previous conversation context  
-• Avoid repeating information unnecessarily`;
+• PRIMARY RULE: Answer using the provided Document Sources first.
+• FALLBACK RULE: If the exact answer is NOT in the document sources, use your own general world knowledge. Start your response with a warm personal note (in the user's language), for example: "⚠️ I couldn't find this in your document. The following answer comes from my own knowledge — please verify if needed." Then give the full answer.
+• CRITICAL MULTILINGUAL RULE: By default, you MUST write your entire response in the EXACT same language as the Question above. HOWEVER, if the user explicitly asks you to reply in a specific language (e.g., "answer in English", or "marathi me batao"), you MUST prioritize their request and reply in that specific language.
+• Maintain awareness of previous conversation context.`;
 
 }
 
@@ -115,13 +111,8 @@ async function generateAnswer(question, chunks = [], history = []) {
 
   try {
 
-    if (!chunks || chunks.length === 0) {
-
-      return "This information is not available in the uploaded document.";
-
-    }
-
     const context = buildContext(chunks);
+    const hasContext = !!(context && context.trim());
 
     const safeHistory =
       (history || [])
@@ -136,7 +127,7 @@ async function generateAnswer(question, chunks = [], history = []) {
 
       {
         role: "system",
-        content: buildSystemPrompt(true)
+        content: buildSystemPrompt(hasContext)
       },
 
       ...safeHistory,
@@ -151,7 +142,9 @@ ${context}
 ---
 
 ## Question
-${question}`
+${question}
+
+[CRITICAL REMINDER: By default, you MUST write your entire response in the EXACT same language as the Question above. HOWEVER, if the user explicitly asks you to reply in a specific language (e.g., "answer in English", or "marathi me batao"), you MUST prioritize their request and reply in that specific language.]`
       }
 
     ];

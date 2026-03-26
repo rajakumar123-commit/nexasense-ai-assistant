@@ -127,7 +127,15 @@ async function groqDomainAnswer(question, domainContext) {
     messages: [
       {
         role: "system",
-        content: `You are a document assistant. Answer questions ONLY if they relate to this domain:\n\n${domainContext}\n\nIf the question is unrelated, respond exactly:\n"This question is outside the scope of the uploaded documents."\n\nDo not use knowledge outside this domain.`
+        content: `You are a helpful and intelligent AI assistant named NexaSense.
+The user's question is not directly covered by the uploaded document.
+
+PRIORITY TASK: Use your vast general world knowledge to provide a highly accurate and helpful answer to the user's question.
+IMPORTANT: Start your response with a warm personal note (in the SAME language as the question), for example:
+"⚠️ I couldn't find this in your uploaded document. The following answer comes from my own knowledge — please verify if needed."
+Then provide the full answer.
+
+CRITICAL MULTILINGUAL RULE: Always match the language of the User's question unless they ask otherwise.`
       },
       { role: "user", content: question }
     ]
@@ -180,15 +188,14 @@ NO
 
 async function geminiContextModeFallback({ question, domainContext, chunksRetrieved, startTime }) {
   const prompt = `
-You are answering questions about the following document domain:
+You are a helpful and intelligent AI assistant named NexaSense.
+The user's question does not match any specific content from their uploaded documents.
 
-${domainContext}
-
-Answer the question ONLY if it is clearly related to this domain.
-Use your knowledge of this subject area to give a helpful, accurate answer.
-
-If the question is unrelated to the domain, respond EXACTLY with:
-"This question is outside the scope of the uploaded documents."
+PRIORITY TASK: Provide a highly accurate, helpful, and detailed answer using your vast general world knowledge.
+IMPORTANT: Start your response with a warm personal note (in the SAME language as the question), for example:
+"⚠️ I couldn't find this specific information in your uploaded document. The following answer comes from my own knowledge — please verify if needed."
+Then provide the full, detailed answer.
+CRITICAL MULTILINGUAL RULE: By default, you MUST write your entire response in the EXACT same language as the Question below. HOWEVER, if the user explicitly asks you to reply in a specific language (e.g., "answer in English", or "marathi me batao"), you MUST prioritize their request and reply in that specific language.
 
 QUESTION:
 ${question}
@@ -214,7 +221,7 @@ ${question}
   try {
     const answer = await groqDomainAnswer(question, domainContext);
     return {
-      answer: answer || "This question is outside the scope of the uploaded documents.",
+      answer: answer || "I was unable to generate a helpful answer. Please try rephrasing your question.",
       sources: [],
       provider: "groq-fallback",
       chunksRetrieved,
