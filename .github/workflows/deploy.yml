@@ -11,34 +11,95 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Deploy to EC2 via SSH
+      - name: Write SSH Key
         run: |
           mkdir -p ~/.ssh
-          cat << 'EOF' > ~/.ssh/id_rsa
+          # ✅ No quotes on EOF = secrets expand correctly
+          cat << EOF > ~/.ssh/id_rsa
           ${{ secrets.EC2_SSH_KEY }}
           EOF
           chmod 600 ~/.ssh/id_rsa
-          ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa ${{ secrets.EC2_USERNAME }}@${{ secrets.EC2_HOST }} << 'EOF'
-            set -e
-            echo "--- Locating Active Deployment ---"
-            # Try to find the real path of the running frontend container
-            APP_DIR=$(sudo docker inspect -f '{{ .Config.Labels.com_docker_compose_project_working_dir }}' nexasense-frontend 2>/dev/null || echo "/home/${{ secrets.EC2_USERNAME }}/nexasense-ai-assistant")
-            echo "Real App Path Found: $APP_DIR"
-            
-            echo "--- Nuclear Cleanup at $APP_DIR ---"
-            sudo docker compose down --rmi all --remove-orphans || sudo docker-compose down --rmi all --remove-orphans || true
-            sudo docker builder prune -af || true
-            
-            # Wipe and Re-clone precisely
-            sudo rm -rf "$APP_DIR"
-            sudo mkdir -p "$APP_DIR"
-            sudo chown -R ${{ secrets.EC2_USERNAME }}:${{ secrets.EC2_USERNAME }} "$APP_DIR"
-            
-            git clone https://github.com/rajakumar123-commit/nexasense-ai-assistant.git "$APP_DIR"
-            cd "$APP_DIR"
-            
-            echo "--- Clean Build & Deploy ---"
-            sudo docker compose build --no-cache --pull || sudo docker-compose build --no-cache --pull
-            sudo docker compose up -d --force-recreate || sudo docker-compose up -d --force-recreate
-            echo "--- Deployment Auto-Verified & Complete ---"
-          EOF
+          # ✅ Verify key actually wrote
+          wc -l ~/.ssh/id_rsa
+          head -1 ~/.ssh/id_rsa
+
+      - name: Verify SSH Connection
+        run: |
+          ssh -o StrictHostKeyChecking=no \
+              -o ConnectTimeout=10 \
+              -i ~/.ssh/id_rsa \
+              ${{ secrets.EC2_USERNAME }}@${{ secrets.EC2_HOST }} \
+              "echo SSH_OK && whoami && curl -s ifconfig.me"
+
+      - name: Deploy to EC2
+        run: |
+          # ✅ Variables written to file first, then used
+          EC2_USER="${{ secrets.EC2_USERNAME }}"
+          EC2_HOST="${{ secrets.EC2_HOST }}"
+          
+          ssh -o StrictHostKeyChecking=no \
+              -o ConnectTimeout=30 \
+              -i ~/.ssh/id_rsa \
+              ${EC2_USER}@${EC2_HOST} \
+              bash -s << 'ENDSSH'
+          
+          set -euxo pipefail
+          
+          PROJECT_DIR="/home/ubuntu/nexasense-ai-assistant"
+          
+          echo "=== SERVER IDENTITY CHECK ==="
+          echo "IP: $(curl -s ifconfig.me)"
+          echo "User: $(whoami)"
+          
+          echo "=== STEP 1: Prepare Project Folder ==="
+          if [ ! -d "$PROJECT_DIR" ]; then
+            echo "Project directory not found. Cloning fresh..."
+            cd /home/ubuntu
+            git clone https://github.com/rajakumar123-commit/nexasense-ai-assistant.git
+            cd nexasense-ai-assistant
+          else
+            echo "Project directory exists. Pulling latest changes..."
+            cd "$PROJECT_DIR"
+            git fetch --all
+            git reset --hard origin/main
+          fi
+          
+          echo "=== STEP 2: Inject Environment Variables ==="
+          # Create .env from GitHub secrets (passed as env vars to this script if needed, 
+          # or we can use the existing one if it was manually set up).
+          # For maximum reliability, we'll ensure the .env has the basic structure.
+          if [ ! -f ".env" ]; then
+            echo "Creating .env from .env.example..."
+            cp .env.example .env
+          fi
+          
+          # NOTE: In a real production setup, you should inject secrets via 
+          # GitHub Actions environment variables or a dedicated secret manager.
+          # For now, we preserve the existing .env to avoid breaking the manual setup.
+          
+          echo "=== STEP 3: Build & Update Services ==="
+          # Use docker compose (v2) if available, fallback to docker-compose (v1)
+          DOCKER_COMPOSE_CMD="sudo docker-compose"
+          if command -v docker >/dev/null && docker compose version >/dev/null 2>&1; then
+            DOCKER_COMPOSE_CMD="sudo docker compose"
+          fi
+          
+          echo "Using command: $DOCKER_COMPOSE_CMD"
+          
+          # 1. Pull latest images for services using public images (postgres, redis, etc.)
+          $DOCKER_COMPOSE_CMD pull
+          
+          # 2. Build local images (backend, worker, frontend)
+          # We remove --no-cache to speed up builds. CACHEBUST in Dockerfile handles code updates.
+          $DOCKER_COMPOSE_CMD build
+          
+          # 3. Restart services gracefully (only recreates changed containers)
+          # --remove-orphans cleans up old service definitions
+          $DOCKER_COMPOSE_CMD up -d --remove-orphans
+          
+          echo "=== STEP 4: Health check ==="
+          sleep 15
+          $DOCKER_COMPOSE_CMD ps
+          
+          echo "=== DEPLOY COMPLETE ==="
+          ENDSSH
