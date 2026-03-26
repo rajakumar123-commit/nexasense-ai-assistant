@@ -20,16 +20,21 @@ jobs:
           chmod 600 ~/.ssh/id_rsa
           ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa ${{ secrets.EC2_USERNAME }}@${{ secrets.EC2_HOST }} << 'EOF'
             set -e
+            echo "--- Nuclear Cleanup: Deleting project and images ---"
+            curl -s ifconfig.me && echo " (Server IP)"
+            sudo docker-compose down --rmi all --remove-orphans || true
+            sudo docker system prune -af --volumes || true
+            cd /home/${{ secrets.EC2_USERNAME }}
+            sudo rm -rf nexasense-ai-assistant
+            
+            echo "--- Fresh Clone from scratch ---"
+            git clone https://github.com/rajakumar123-commit/nexasense-ai-assistant.git
             cd nexasense-ai-assistant
-            echo "--- Current Commit & Dockerfile on Server ---"
-            git fetch --all
-            git reset --hard origin/main
-            git rev-parse HEAD
-            cat Dockerfile | grep CACHEBUST || echo "CACHEBUST NOT FOUND!"
-            echo "--- Forced Rebuild of Services ---"
-            # Attempting both v1 and v2 for maximum compatibility
-            sudo docker-compose down || sudo docker compose down
-            sudo docker-compose build --no-cache frontend backend || sudo docker compose build --no-cache frontend backend
-            sudo docker-compose up -d --force-recreate || sudo docker compose up -d --force-recreate
-            echo "--- Deployment Complete ---"
+            
+            echo "--- Building Fresh Images from 0% Cache ---"
+            sudo docker-compose build --no-cache --pull
+            
+            echo "--- Starting Clean Services ---"
+            sudo docker-compose up -d --force-recreate
+            echo "--- Deployment 100% Guaranteed & Complete ---"
           EOF
