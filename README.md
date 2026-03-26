@@ -38,6 +38,7 @@ Razorpay credit billing, CI/CD automation, and HTTPS on a real custom domain.
 > | What | How |
 > |---|---|
 > | **AI Engine** | 10-step RAG pipeline — dual LLM (Groq Llama-3.3-70B + Gemini 1.5 Pro) |
+> | **Memory** | Persistent Session History — UUID mapping & PostgreSQL JSON aggregation |
 > | **Performance** | 2-layer cache (LRU + Redis semantic vector) — cache hit = 0 LLM calls |
 > | **Ingestion** | Async BullMQ worker — non-blocking, idempotent, ONNX embeddings (no API cost) |
 > | **Billing** | Razorpay — atomic `SELECT FOR UPDATE` credit system |
