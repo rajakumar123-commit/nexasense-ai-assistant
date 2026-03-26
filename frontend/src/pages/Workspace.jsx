@@ -11,7 +11,7 @@ import { motion } from "framer-motion";
 import toast from "react-hot-toast";
 import useApi from "../hooks/useApi";
 import DocumentCard from "../components/DocumentCard";
-import UploadModal  from "../components/UploadModal";
+import UploadModal from "../components/UploadModal";
 import ConfirmModal from "../components/ConfirmModal";
 
 function Workspace() {
@@ -19,10 +19,10 @@ function Workspace() {
   const api = useApi();
   const navigate = useNavigate();
 
-  const [documents, setDocuments]   = useState([]);
-  const [loading, setLoading]       = useState(true);
+  const [documents, setDocuments] = useState([]);
+  const [loading, setLoading] = useState(true);
   const [showUpload, setShowUpload] = useState(false);
-  const [dragging, setDragging]     = useState(false);
+  const [dragging, setDragging] = useState(false);
   const [droppedFile, setDroppedFile] = useState(null);
   const [confirmDelete, setConfirmDelete] = useState(null); // { id, name }
 
@@ -32,7 +32,7 @@ function Workspace() {
   // The underlying axios instance is a module-level singleton so this is safe.
   const fetchDocuments = useCallback(async () => {
     try {
-      const res  = await api.get("/documents");
+      const res = await api.get("/documents");
       const docs = res.data?.documents || res.data?.data || res.documents || [];
       setDocuments(docs);
     } catch (err) {
@@ -96,8 +96,8 @@ function Workspace() {
     }
   };
 
-  const handleDragOver  = (e) => { e.preventDefault(); setDragging(true); };
-  const handleDragLeave = ()  => setDragging(false);
+  const handleDragOver = (e) => { e.preventDefault(); setDragging(true); };
+  const handleDragLeave = () => setDragging(false);
 
   const handleUploadSuccess = () => {
     setDroppedFile(null);
@@ -134,7 +134,7 @@ function Workspace() {
       {dragging && (
         <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-40">
           <div className="border-2 border-dashed border-emerald-400 p-12 rounded-xl text-center animate-scale-in">
-            <p className="text-lg font-medium">Drop File to Upload</p>
+            <p className="text-lg font-medium">Drop file to Upload</p>
           </div>
         </div>
       )}

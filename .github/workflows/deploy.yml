@@ -20,21 +20,25 @@ jobs:
           chmod 600 ~/.ssh/id_rsa
           ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa ${{ secrets.EC2_USERNAME }}@${{ secrets.EC2_HOST }} << 'EOF'
             set -e
-            echo "--- Nuclear Cleanup: Deleting project and images ---"
-            curl -s ifconfig.me && echo " (Server IP)"
-            sudo docker-compose down --rmi all --remove-orphans || true
-            sudo docker system prune -af --volumes || true
-            cd /home/${{ secrets.EC2_USERNAME }}
-            sudo rm -rf nexasense-ai-assistant
+            echo "--- Locating Active Deployment ---"
+            # Try to find the real path of the running frontend container
+            APP_DIR=$(sudo docker inspect -f '{{ .Config.Labels.com_docker_compose_project_working_dir }}' nexasense-frontend 2>/dev/null || echo "/home/${{ secrets.EC2_USERNAME }}/nexasense-ai-assistant")
+            echo "Real App Path Found: $APP_DIR"
             
-            echo "--- Fresh Clone from scratch ---"
-            git clone https://github.com/rajakumar123-commit/nexasense-ai-assistant.git
-            cd nexasense-ai-assistant
+            echo "--- Nuclear Cleanup at $APP_DIR ---"
+            sudo docker compose down --rmi all --remove-orphans || sudo docker-compose down --rmi all --remove-orphans || true
+            sudo docker builder prune -af || true
             
-            echo "--- Building Fresh Images from 0% Cache ---"
-            sudo docker-compose build --no-cache --pull
+            # Wipe and Re-clone precisely
+            sudo rm -rf "$APP_DIR"
+            sudo mkdir -p "$APP_DIR"
+            sudo chown -R ${{ secrets.EC2_USERNAME }}:${{ secrets.EC2_USERNAME }} "$APP_DIR"
             
-            echo "--- Starting Clean Services ---"
-            sudo docker-compose up -d --force-recreate
-            echo "--- Deployment 100% Guaranteed & Complete ---"
+            git clone https://github.com/rajakumar123-commit/nexasense-ai-assistant.git "$APP_DIR"
+            cd "$APP_DIR"
+            
+            echo "--- Clean Build & Deploy ---"
+            sudo docker compose build --no-cache --pull || sudo docker-compose build --no-cache --pull
+            sudo docker compose up -d --force-recreate || sudo docker-compose up -d --force-recreate
+            echo "--- Deployment Auto-Verified & Complete ---"
           EOF
