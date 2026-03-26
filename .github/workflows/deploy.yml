@@ -16,16 +16,7 @@ jobs:
           mkdir -p ~/.ssh
           echo "${{ secrets.EC2_SSH_KEY }}" > ~/.ssh/id_rsa
           chmod 600 ~/.ssh/id_rsa
-          # Validate the key is well-formed
-          ssh-keygen -y -f ~/.ssh/id_rsa > /dev/null && echo "✅ SSH key is valid" || { echo "❌ SSH key is INVALID — check EC2_SSH_KEY secret"; exit 1; }
-
-      - name: Verify SSH Connection
-        run: |
-          ssh -o StrictHostKeyChecking=no \
-              -o ConnectTimeout=10 \
-              -i ~/.ssh/id_rsa \
-              ${{ secrets.EC2_USERNAME }}@${{ secrets.EC2_HOST }} \
-              "echo SSH_OK && whoami"
+          ssh-keygen -y -f ~/.ssh/id_rsa > /dev/null && echo "SSH key valid" || { echo "SSH key INVALID"; exit 1; }
 
       - name: Deploy to EC2
         env:
@@ -42,7 +33,8 @@ jobs:
           PROJECT_DIR="/home/ubuntu/nexasense-ai-assistant"
 
           echo "=== SERVER INFO ==="
-          echo "User: $(whoami) | IP: $(curl -s ifconfig.me)"
+          whoami
+          curl -s ifconfig.me
 
           echo "=== STEP 1: Update Code ==="
           if [ ! -d "$PROJECT_DIR" ]; then
@@ -61,13 +53,12 @@ jobs:
           echo "=== STEP 2: Ensure .env exists ==="
           if [ ! -f ".env" ]; then
             echo "WARNING: .env not found — copying from .env.example"
-            echo "Manually edit /home/ubuntu/nexasense-ai-assistant/.env with real API keys!"
             cp .env.example .env
           else
             echo ".env exists — preserving it"
           fi
 
-          echo "=== STEP 3: Build & Restart ==="
+          echo "=== STEP 3: Build and Restart ==="
           if sudo docker compose version > /dev/null 2>&1; then
             DC="sudo docker compose"
           else
@@ -75,23 +66,14 @@ jobs:
           fi
           echo "Using: $DC"
 
-          # Pull latest base images (postgres, redis, chroma, caddy)
           $DC pull --ignore-pull-failures || true
-
-          # Build app images (uses layer cache — fast on updates)
           $DC build
-
-          # Restart only changed containers, keep volumes intact
           $DC up -d --remove-orphans
 
           echo "=== STEP 4: Health Check ==="
           sleep 30
           $DC ps
-          echo ""
-          curl -sf http://localhost:3000/api/health \
-            && echo "✅ Backend is healthy" \
-            || echo "⚠️  Backend still starting up (check logs: sudo docker compose logs backend)"
+          curl -sf http://localhost:3000/api/health && echo "Backend healthy" || echo "Backend still starting"
 
-          echo ""
-          echo "=== ✅ DEPLOY COMPLETE ==="
+          echo "=== DEPLOY COMPLETE ==="
           ENDSSH
