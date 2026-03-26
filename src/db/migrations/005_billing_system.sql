@@ -30,6 +30,7 @@ CREATE TABLE IF NOT EXISTS transactions (
 );
 
 -- 3. Trigger for updated_at on transactions
+DROP TRIGGER IF EXISTS trigger_transactions_updated_at ON transactions;
 CREATE TRIGGER trigger_transactions_updated_at
     BEFORE UPDATE ON transactions
     FOR EACH ROW
