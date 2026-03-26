@@ -44,8 +44,8 @@ RUN mkdir -p /app/uploads /app/logs /app/.model-cache \
   && useradd -r -g nexasense nexasense \
   && chown -R nexasense:nexasense /app
 
-# Drop to non-root user (security best practice)
-USER nexasense
+# Dropping to non-root user disabled to allow Multer to write to Docker named volumes
+# USER nexasense
 
 EXPOSE 3000
 
