@@ -14,14 +14,41 @@ const pool = new Pool({
   connectionTimeoutMillis: 30000  // 30s — WASM embedding can be slow
 });
 
-// Test connection on startup — warn instead of crash if DB not yet ready
-pool.connect((err, client, release) => {
+// Test connection on startup and run critical migrations
+pool.connect(async (err, client, release) => {
   if (err) {
     logger.error("Database connection failed:", err.message);
     return;
   }
   logger.info("✅ PostgreSQL connected");
-  release();
+  
+  try {
+    // Ensure uuid-ossp extension exists
+    await client.query(`CREATE EXTENSION IF NOT EXISTS "uuid-ossp";`);
+
+    // Ensure messages table exists
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS messages (
+        id               UUID        PRIMARY KEY DEFAULT uuid_generate_v4(),
+        conversation_id  UUID        NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
+        role             TEXT        NOT NULL CHECK (role IN ('user', 'assistant', 'system')),
+        content          TEXT        NOT NULL,
+        token_count      INTEGER     DEFAULT 0,
+        created_at       TIMESTAMPTZ DEFAULT NOW()
+      );
+    `);
+    
+    await client.query(`
+      CREATE INDEX IF NOT EXISTS idx_messages_conv_time ON messages(conversation_id, created_at ASC);
+      CREATE INDEX IF NOT EXISTS idx_messages_role ON messages(conversation_id, role);
+    `);
+    
+    logger.info("✅ Database schema verified (messages table synced)");
+  } catch (syncErr) {
+    logger.error("Database sync failed:", syncErr.message);
+  } finally {
+    release();
+  }
 });
 
 pool.on("error", (err) => {
