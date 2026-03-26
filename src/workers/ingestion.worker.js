@@ -121,7 +121,7 @@ const ingestionWorker = new Worker(
       const { text, pageCount } = await extractText(filePath);
 
       if (!text || !text.trim()) {
-        throw new Error("No text extracted from PDF");
+        throw new Error("No text could be extracted from this file");
       }
 
       logger.info(`[Worker] Extracted ${pageCount} pages`);

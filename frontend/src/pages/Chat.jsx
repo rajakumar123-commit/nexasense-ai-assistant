@@ -24,9 +24,37 @@ function Chat() {
   const [activeSession, setActiveSession] = useState(null);
   const [pipeline, setPipeline]           = useState(null);
   const [sidebarOpen, setSidebarOpen]     = useState(false);
+  const [isListening, setIsListening]     = useState(false);
 
   const chatEndRef    = useRef(null);
   const textareaRef   = useRef(null);
+  const recognitionRef = useRef(null);
+
+  // ── Voice Input (SpeechRecognition) ─────────────────────────
+  const toggleListening = () => {
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SpeechRecognition) return;
+
+    if (isListening) {
+      recognitionRef.current?.stop();
+      setIsListening(false);
+      return;
+    }
+
+    const recognition = new SpeechRecognition();
+    recognition.lang           = "";  // empty = uses browser/OS language (Hindi, English, etc.)
+    recognition.interimResults = false;
+    recognition.maxAlternatives = 1;
+    recognition.onresult = (event) => {
+      const transcript = event.results[0][0].transcript;
+      setQuestion(prev => prev ? prev + " " + transcript : transcript);
+    };
+    recognition.onerror = () => setIsListening(false);
+    recognition.onend   = () => setIsListening(false);
+    recognitionRef.current = recognition;
+    recognition.start();
+    setIsListening(true);
+  };
 
   const activeSessionData = sessions.find(s => s.id === activeSession) || null;
   const messages = activeSessionData?.messages || [];
@@ -207,7 +235,7 @@ function Chat() {
               </h3>
               <p className="text-slate-400 text-sm max-w-xs">
                 {documentId
-                  ? "Ask any question about your uploaded PDF and the AI will answer using document context."
+                  ? "Ask any question about your uploaded document. You can ask in Hindi, English, or any language!"
                   : "Go to the Workspace and click 'Chat' on a document to start."}
               </p>
             </motion.div>
@@ -270,16 +298,34 @@ function Chat() {
         {/* Input area */}
         <div className="border-t border-slate-800 p-4 bg-slate-900/60 backdrop-blur-sm">
           <form onSubmit={handleSubmit} className="flex gap-3 max-w-4xl mx-auto">
-            <textarea
-              ref={textareaRef}
-              className={`flex-1 bg-slate-800/80 border border-slate-700 rounded-xl p-3.5 resize-none text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500/60 focus:border-blue-500/50 transition min-h-[52px] max-h-32 ${credits === 0 ? "opacity-50 cursor-not-allowed" : ""}`}
-              placeholder={credits === 0 ? "You have 0 credits. Upgrade to ask questions." : documentId ? "Ask a question about your document…" : "Select a document first…"}
-              value={question}
-              onChange={e => setQuestion(e.target.value)}
-              onKeyDown={handleKeyDown}
-              rows={1}
-              disabled={!documentId || credits === 0}
-            />
+            <div className="relative flex-1">
+              <textarea
+                ref={textareaRef}
+                className={`w-full bg-slate-800/80 border border-slate-700 rounded-xl p-3.5 pr-12 resize-none text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500/60 focus:border-blue-500/50 transition min-h-[52px] max-h-32 ${credits === 0 ? "opacity-50 cursor-not-allowed" : ""}`}
+                placeholder={credits === 0 ? "You have 0 credits. Upgrade to ask questions." : documentId ? "Ask a question about your document…" : "Select a document first…"}
+                value={question}
+                onChange={e => setQuestion(e.target.value)}
+                onKeyDown={handleKeyDown}
+                rows={1}
+                disabled={!documentId || credits === 0}
+              />
+              {/* Mic Button */}
+              {(window.SpeechRecognition || window.webkitSpeechRecognition) && (
+                <button
+                  type="button"
+                  onClick={toggleListening}
+                  title={isListening ? "Stop listening" : "Speak your question"}
+                  className={`absolute right-3 top-1/2 -translate-y-1/2 p-1.5 rounded-lg transition-all ${
+                    isListening
+                      ? "bg-red-500/20 text-red-400 animate-pulse"
+                      : "text-slate-500 hover:text-slate-300 hover:bg-slate-700"
+                  }`}>
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
+                  </svg>
+                </button>
+              )}
+            </div>
             <motion.button
               type="submit" disabled={loading || !question.trim() || !documentId || credits === 0}
               whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.97 }}

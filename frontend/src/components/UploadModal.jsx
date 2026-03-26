@@ -6,6 +6,13 @@ import React, { useState, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import useApi from "../hooks/useApi";
 
+
+const ALLOWED_TYPES = [
+  "application/pdf",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  "text/plain"
+];
+
 function UploadModal({ isOpen, onClose, onUploadSuccess, onUploadError, initialFile }) {
   const api = useApi();
   const inputRef = useRef(null);
@@ -28,13 +35,13 @@ function UploadModal({ isOpen, onClose, onUploadSuccess, onUploadError, initialF
   const handleDrop = (e) => {
     e.preventDefault(); setDragging(false);
     const f = e.dataTransfer.files[0];
-    if (f && f.type === "application/pdf") { setFile(f); setError(""); }
-    else setError("Only PDF files are supported.");
+    if (f && ALLOWED_TYPES.includes(f.type)) { setFile(f); setError(""); }
+    else setError("Only PDF, DOCX, and TXT files are supported.");
   };
 
   const handleUpload = async () => {
-    if (!file) { setError("Please select a PDF file."); return; }
-    if (file.type !== "application/pdf") { setError("Only PDF files are supported."); return; }
+    if (!file) { setError("Please select a file."); return; }
+    if (!ALLOWED_TYPES.includes(file.type)) { setError("Only PDF, DOCX, and TXT files are supported."); return; }
 
     setError(""); setLoading(true); setProgress(10);
     const interval = setInterval(() => setProgress(p => Math.min(p + 12, 85)), 400);
@@ -80,7 +87,7 @@ function UploadModal({ isOpen, onClose, onUploadSuccess, onUploadError, initialF
               </div>
               <div>
                 <h3 className="text-base font-semibold text-slate-100">Upload Document</h3>
-                <p className="text-xs text-slate-500">PDF files only · Max 50MB</p>
+                <p className="text-xs text-slate-500">PDF · DOCX · TXT · Max 20MB</p>
               </div>
             </div>
             <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-slate-800 text-slate-500 hover:text-slate-300 transition">
@@ -103,10 +110,10 @@ function UploadModal({ isOpen, onClose, onUploadSuccess, onUploadError, initialF
                 <svg className="w-10 h-10 text-slate-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                 </svg>
-                <p className="text-sm font-medium text-slate-300">Drag PDF here or click to browse</p>
-                <p className="text-xs text-slate-500">Supports PDF format</p>
+                <p className="text-sm font-medium text-slate-300">Drag document here or click to browse</p>
+                <p className="text-xs text-slate-500">PDF, DOCX, or TXT format</p>
               </div>
-              <input ref={inputRef} type="file" accept=".pdf" className="hidden" onChange={handleFileChange} />
+              <input ref={inputRef} type="file" accept=".pdf,.docx,.txt" className="hidden" onChange={handleFileChange} />
             </div>
           )}
 

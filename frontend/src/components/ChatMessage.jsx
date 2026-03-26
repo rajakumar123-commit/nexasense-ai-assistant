@@ -2,12 +2,26 @@
 // ChatMessage.jsx — NexaSense
 // Premium animated chat bubble with avatar + source citations
 // ============================================================
-import React from "react";
-import { motion } from "framer-motion";
+import React, { useState } from "react";
 import SourceCard from "./SourceCard";
 
 function ChatMessage({ role, content, sources = [] }) {
   const isUser = role === "user";
+  const [speaking, setSpeaking] = useState(false);
+
+  const handleSpeak = () => {
+    if (!window.speechSynthesis) return;
+    if (speaking) {
+      window.speechSynthesis.cancel();
+      setSpeaking(false);
+      return;
+    }
+    const utterance = new SpeechSynthesisUtterance(content);
+    utterance.onend   = () => setSpeaking(false);
+    utterance.onerror = () => setSpeaking(false);
+    window.speechSynthesis.speak(utterance);
+    setSpeaking(true);
+  };
 
   return (
     <div className={`flex items-start gap-3 ${isUser ? "flex-row-reverse" : "flex-row"}`}>
@@ -25,10 +39,25 @@ function ChatMessage({ role, content, sources = [] }) {
 
       {/* Bubble */}
       <div className={`max-w-[75%] flex flex-col gap-2 ${isUser ? "items-end" : "items-start"}`}>
-        {/* Label */}
-        <span className="text-xs text-slate-500 font-medium px-1">
-          {isUser ? "You" : "NexaSense AI"}
-        </span>
+        {/* Label + Speaker */}
+        <div className="flex items-center gap-2 px-1">
+          <span className="text-xs text-slate-500 font-medium">
+            {isUser ? "You" : "NexaSense AI"}
+          </span>
+          {!isUser && content && window.speechSynthesis && (
+            <button
+              onClick={handleSpeak}
+              title={speaking ? "Stop reading" : "Read aloud"}
+              className={`transition-colors ${speaking ? "text-blue-400 animate-pulse" : "text-slate-600 hover:text-slate-400"}`}>
+              <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                {speaking
+                  ? <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 11-18 0 9 9 0 0118 0zM9 10a1 1 0 00-1 1v2a1 1 0 001 1h2a1 1 0 001-1v-2a1 1 0 00-1-1H9z" />
+                  : <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.536 8.464a5 5 0 010 7.072M12 6v12M9 8.464a5 5 0 000 7.072M6.343 6.343a8 8 0 000 11.314" />
+                }
+              </svg>
+            </button>
+          )}
+        </div>
 
         {/* Content bubble */}
         <div className={`px-4 py-3 rounded-2xl text-sm leading-relaxed whitespace-pre-wrap break-words ${

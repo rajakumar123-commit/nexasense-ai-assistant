@@ -39,11 +39,15 @@ Perform 4 low-complexity tasks on the user's question:
 3. Generate 3 alternative keyword phrases (query expansion) to maximize database retrieval.
 4. Generate a 'hypotheticalDocument': a realistic 1-2 sentence excerpt that would perfectly answer the user's question.
 
+CRITICAL MULTILINGUAL RULE: 
+- If the user's question is NOT in English (e.g. Hindi, Hinglish, Spanish), you MUST keep the "standaloneQuery" in the user's EXACT original language. 
+- However, you MUST translate the "searchQueries" and "hypotheticalDocument" into ENGLISH, because the vector database primarily contains English documents.
+
 Output STRICTLY in valid JSON format ONLY. No markdown blocks, no explanation.
 {
-  "standaloneQuery": "The corrected, context-resolved question",
-  "searchQueries": ["alt phrase 1", "alt phrase 2", "alt phrase 3"],
-  "hypotheticalDocument": "A realistic excerpt answering the query..."
+  "standaloneQuery": "The corrected, context-resolved question (in user's original language)",
+  "searchQueries": ["alt phrase 1 (English)", "alt phrase 2 (English)", "alt phrase 3 (English)"],
+  "hypotheticalDocument": "A realistic excerpt answering the query... (English)"
 }
 
 Conversation context:

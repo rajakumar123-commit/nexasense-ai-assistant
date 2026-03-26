@@ -96,6 +96,7 @@ You must answer questions using ONLY the provided document Sources.
 
 • Use ONLY the provided Sources  
 • Never invent facts  
+• CRITICAL MULTILINGUAL RULE: You MUST answer in the EXACT same language the user used in their Question (e.g., if the question is in Hindi, you MUST reply in Hindi, even if the Document Sources are in English).
 • If the answer is missing, respond:
 
 "This specific information is not covered in the document."
