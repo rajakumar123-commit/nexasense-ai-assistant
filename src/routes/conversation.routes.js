@@ -86,20 +86,45 @@ router.get("/conversations/document/:documentId", requirePermission("chat:query"
 
     const { rows } = await db.query(
       `
-      SELECT id, document_id, question, answer, sources, metadata, created_at
-      FROM conversations
-      WHERE user_id = $1 AND document_id = $2
-      ORDER BY created_at ASC
-      LIMIT 200
+      SELECT c.id, 
+             c.document_id, 
+             c.created_at,
+             COALESCE(
+               json_agg(
+                 json_build_object(
+                   'id', m.id,
+                   'role', m.role,
+                   'content', m.content
+                 ) ORDER BY m.created_at ASC
+               ) FILTER (WHERE m.id IS NOT NULL), '[]'
+             ) as messages
+      FROM conversations c
+      LEFT JOIN messages m ON m.conversation_id = c.id
+      WHERE c.user_id = $1 AND c.document_id = $2
+      GROUP BY c.id, c.document_id, c.created_at
+      ORDER BY c.created_at DESC
+      LIMIT 100
       `,
       [userId, documentId]
     );
 
-    const conversations = rows.map(r => ({
-      ...r,
-      sources: r.sources || [],
-      metadata: r.metadata || {}
-    }));
+    const conversations = rows.map(r => {
+      // Chat.jsx expects { id, title, messages: [] }
+      // the title is derived from the first user message
+      const firstUserMsg = r.messages.find(m => m.role === 'user');
+      const title = firstUserMsg ? firstUserMsg.content.slice(0, 44) || "New Chat" : "New Chat";
+      
+      return {
+        id: r.id,
+        title,
+        messages: r.messages.map(m => ({
+          id: m.id,
+          role: m.role,
+          content: m.content,
+          sources: [] // Sources aren't saved in messages table 
+        }))
+      };
+    });
 
     return res.json({
       success: true,

@@ -40,7 +40,32 @@ function Chat() {
     setSessions(prev => prev.map(s => s.id === sessionId ? updater(s) : s));
 
   useEffect(() => { chatEndRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages]);
-  useEffect(() => { setSessions([]); setActiveSession(null); setError(""); setQuestion(""); }, [documentId]);
+  useEffect(() => { 
+    setSessions([]); 
+    setActiveSession(null); 
+    setError(""); 
+    setQuestion("");
+    setPipeline(null);
+
+    if (documentId) {
+      const fetchHistory = async () => {
+        try {
+          const API_URL = import.meta.env.VITE_API_URL || "/api";
+          const res = await fetch(`${API_URL}/conversations/document/${documentId}`, {
+            headers: { Authorization: `Bearer ${localStorage.getItem("token")}` }
+          });
+          const data = await res.json();
+          if (data.success && data.conversations && data.conversations.length > 0) {
+            setSessions(data.conversations);
+            setActiveSession(data.conversations[0].id);
+          }
+        } catch (err) {
+          console.error("Failed to load conversation history:", err);
+        }
+      };
+      fetchHistory();
+    }
+  }, [documentId]);
 
   const handleSubmit = async (e) => {
     e?.preventDefault();
@@ -71,10 +96,20 @@ function Chat() {
 
     try {
       const result = await streamQuery(currentQuestion, documentId, sessionId);
+      
+      let finalSessionId = sessionId;
+      if (result.conversationId && result.conversationId !== sessionId) {
+        finalSessionId = result.conversationId;
+        setSessions(prev => prev.map(s => s.id === sessionId ? { ...s, id: finalSessionId } : s));
+        if (activeSession === sessionId) {
+          setActiveSession(finalSessionId);
+        }
+      }
+
       setPipeline(result.pipeline || null);
       // Refresh credits in Navbar after each query
       refreshCredits();
-      updateSession(sessionId, s => ({
+      updateSession(finalSessionId, s => ({
         ...s,
         messages: s.messages.map(msg =>
           msg.id === assistantId

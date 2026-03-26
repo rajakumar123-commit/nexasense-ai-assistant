@@ -89,7 +89,8 @@ export default function useStream() {
           ? data.sources
           : [],
         responseTimeMs: data.responseTimeMs ?? null,
-        pipeline: data.pipeline || null
+        pipeline: data.pipeline || null,
+        conversationId: data.conversationId || null
       };
 
     } catch (error) {
