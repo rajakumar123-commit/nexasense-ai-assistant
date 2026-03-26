@@ -25,6 +25,10 @@ COPY package*.json ./
 RUN npm install --omit=dev --no-audit --no-fund \
   && npm cache clean --force
 
+# ✅ Cache Buster: Force re-copy on code changes without breaking npm install cache
+# Update this string to force a rebuild of the Node backend/worker
+ARG CACHEBUST=v3.1_force_rebuild
+
 # Copy application source
 COPY . .
 

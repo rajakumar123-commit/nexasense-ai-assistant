@@ -17,6 +17,10 @@ COPY package*.json ./
 
 RUN npm install --no-audit --no-fund
 
+# ✅ Cache Buster: Force re-copy on code changes without breaking npm install cache
+# Update this string to force a rebuild of the React bundle
+ARG CACHEBUST=v3.1_force_rebuild
+
 # Copy source files
 COPY . .
 
