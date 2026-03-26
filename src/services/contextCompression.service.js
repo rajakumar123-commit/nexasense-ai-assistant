@@ -9,80 +9,33 @@
 const logger = require("../utils/logger");
 
 // ------------------------------------------------------------
-// Compress single chunk
-// Simple heuristic compression
+// Clean single chunk
+// Gently removes excess whitespace without destroying semantic meaning
 // ------------------------------------------------------------
 function compressChunk(query, chunkText) {
-
   if (!chunkText) return "";
-
-  const sentences = chunkText.split(/(?<=\.|\?|!)\s+/);
-
-  const queryWords = query
-    .toLowerCase()
-    .split(/\s+/)
-    .filter(w => w.length > 2);
-
-  const filtered = sentences.filter(sentence => {
-
-    const lower = sentence.toLowerCase();
-
-    return queryWords.some(word => lower.includes(word));
-
-  });
-
-  const compressed = filtered.join(" ");
-
-  // Only use compressed version if it has meaningful content.
-  // Empty or very short results indicate over-filtering — fall back
-  // to the first 500 chars of the original text instead.
-  const MIN_COMPRESSED_LENGTH = 100;
-
-  if (compressed.length < MIN_COMPRESSED_LENGTH) {
-    return chunkText.slice(0, 600);
-  }
-
-  return compressed;
-
+  // Safe cleanup: collapse multiple spaces/newlines
+  return chunkText.replace(/\s+/g, " ").trim();
 }
 
-
 // ------------------------------------------------------------
-// Compress multiple chunks
+// Pass-through context cleaner
 // ------------------------------------------------------------
 async function compressContext(query, chunks = []) {
-
   try {
-
     if (!chunks.length) return [];
-
-    const compressedChunks = chunks.map(chunk => {
-
-      const compressedText =
-        compressChunk(query, chunk.content);
-
-      return {
+    
+    // Instead of destroying sentences, we just clean the formatting.
+    // Llama 3.3 and Gemini 1.5 Pro are excellent at long-context reasoning.
+    return chunks.map(chunk => ({
         ...chunk,
-        content: compressedText
-      };
-
-    });
-
-    return compressedChunks;
-
+        content: compressChunk(query, chunk.content)
+    }));
   } catch (error) {
-
-    logger.error(
-      "[ContextCompression] failed:",
-      error.message
-    );
-
+    logger.error("[ContextCompression] failed:", error.message);
     return chunks;
-
   }
-
 }
-
 
 module.exports = {
   compressContext

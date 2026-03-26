@@ -53,7 +53,7 @@ function dedupe(chunks = []) {
     const key =
       chunk?.metadata?.chunkIndex ??
       chunk?.metadata?.chunkId ??
-      (chunk?.content || "").slice(0, 80);
+      (chunk?.content || "").slice(0, 200);
 
     if (key === null || key === undefined) return false;
     if (seen.has(key)) return false;

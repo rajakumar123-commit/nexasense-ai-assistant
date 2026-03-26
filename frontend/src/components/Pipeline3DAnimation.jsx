@@ -2,10 +2,10 @@
 // Pipeline3DAnimation.jsx
 // NexaSense AI Assistant
 // Exact Mermaid flowchart → 3D animated React component
-// Sunset gradient background · no overlaps · proper spacing
+// Enterprise wrapper · fully responsive · no internal logic changes
 // ============================================================
 
-import React, { useEffect, useRef } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { motion, useMotionValue, useTransform, useSpring } from "framer-motion";
 
 // ── colour tokens ─────────────────────────────────────────────
@@ -39,7 +39,6 @@ const Col = ({ children, gap = 0 }) => (
   </div>
 );
 
-// thin vertical line + arrowhead between rows inside a lane
 const VArrow = ({ color = "rgba(255,255,255,0.4)", h = 20 }) => (
   <Col>
     <motion.div
@@ -55,7 +54,6 @@ const VArrow = ({ color = "rgba(255,255,255,0.4)", h = 20 }) => (
   </Col>
 );
 
-// horizontal connector with flowing pulse
 const HArrow = ({ color = "rgba(255,255,255,0.45)", label, minW = 28, maxW = 56 }) => (
   <div style={{ display:"flex", alignItems:"center", flex:1, minWidth:minW, maxWidth:maxW }}>
     <div style={{ height:2, flex:1, background:`linear-gradient(to right,rgba(255,255,255,0.08),${color})`, position:"relative", overflow:"hidden", borderRadius:1 }}>
@@ -70,7 +68,6 @@ const HArrow = ({ color = "rgba(255,255,255,0.45)", label, minW = 28, maxW = 56 
   </div>
 );
 
-// between lanes — taller connector
 const LaneConnector = ({ label, color = "rgba(255,255,255,0.45)" }) => (
   <Col>
     <motion.div
@@ -91,7 +88,6 @@ const LaneConnector = ({ label, color = "rgba(255,255,255,0.45)" }) => (
   </Col>
 );
 
-// lane container
 const Lane = ({ label, color, border, dim, delay=0, children }) => (
   <motion.div
     initial={{ opacity:0, y:20 }}
@@ -106,7 +102,6 @@ const Lane = ({ label, color, border, dim, delay=0, children }) => (
   </motion.div>
 );
 
-// standard process node
 const PNode = ({ color, border, dim, badge, delay=0, children, style={} }) => (
   <motion.div
     initial={{ opacity:0, y:14 }}
@@ -121,7 +116,6 @@ const PNode = ({ color, border, dim, badge, delay=0, children, style={} }) => (
   </motion.div>
 );
 
-// diamond decision node
 const Diamond = ({ color, border, dim, delay=0, children }) => (
   <motion.div
     initial={{ opacity:0, scale:0.8 }}
@@ -134,7 +128,6 @@ const Diamond = ({ color, border, dim, delay=0, children }) => (
   </motion.div>
 );
 
-// terminal pill (Q / Answer)
 const Pill = ({ children, delay=0, gold=false }) => (
   <motion.div
     initial={{ opacity:0, y:-14 }}
@@ -155,11 +148,28 @@ const BranchTag = ({ color, border, children }) => (
 
 // ── main export ───────────────────────────────────────────────
 export default function Pipeline3DAnimation() {
-  const ref   = useRef(null);
+  const ref    = useRef(null);
   const mouseX = useMotionValue(0);
   const mouseY = useMotionValue(0);
-  const rotX  = useSpring(useTransform(mouseY,[-1,1],[15,8]),  { stiffness:55, damping:20 });
-  const rotY  = useSpring(useTransform(mouseX,[-1,1],[-9,4]), { stiffness:55, damping:20 });
+  const rotX   = useSpring(useTransform(mouseY,[-1,1],[15,8]),  { stiffness:55, damping:20 });
+  const rotY   = useSpring(useTransform(mouseX,[-1,1],[-9,4]), { stiffness:55, damping:20 });
+
+  // ── track container width for responsive scale ──
+  const [scale, setScale] = useState(1);
+  const wrapRef = useRef(null);
+
+  useEffect(() => {
+    const el = wrapRef.current;
+    if (!el) return;
+    const observer = new ResizeObserver(([entry]) => {
+      const w = entry.contentRect.width;
+      // native content width ≈ 700px; scale down on smaller screens
+      const next = Math.min(1, Math.max(0.38, w / 720));
+      setScale(next);
+    });
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
 
   useEffect(() => {
     const el = ref.current;
@@ -175,219 +185,222 @@ export default function Pipeline3DAnimation() {
     return () => { el.removeEventListener("mousemove",mv); el.removeEventListener("mouseleave",ml); };
   }, [mouseX, mouseY]);
 
+  // ── dynamic height so the outer wrapper never clips ──
+  const contentH = 1080; // approximate natural height of the 3-D stage
+  const outerH   = Math.round(contentH * scale) + 48;
+
   return (
     <div
-      ref={ref}
-      style={{
-        position:"relative", width:"100%", minHeight:640,
-        background:`
-          radial-gradient(circle at 50% 78%, rgba(255,220,120,0.85) 0%, rgba(255,140,60,0.65) 18%, rgba(255,80,40,0.55) 34%, transparent 58%),
-          linear-gradient(to bottom, #9ecbff 0%, #c6a4ff 18%, #ff9bb3 38%, #ff7a4d 62%, #ff3c1f 83%, #b30000 100%)
-        `,
-        borderRadius:24,
-        border:"1px solid rgba(255,255,255,0.22)",
-        boxShadow:"0 32px 64px -16px rgba(0,0,0,0.65), inset 0 1px 0 rgba(255,255,255,0.28)",
-        overflow:"hidden",
-        padding:"36px 24px 52px",
-        perspective:"1600px",
-        fontFamily:"'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace",
-      }}
+      ref={wrapRef}
+      className="relative w-full overflow-hidden rounded-2xl bg-slate-900/40 backdrop-blur-xl ring-1 ring-white/[0.07] shadow-[0_0_0_1px_rgba(255,255,255,0.03),0_32px_64px_-16px_rgba(0,0,0,0.6)]"
+      style={{ minHeight: outerH }}
     >
-      {/* dark overlay for readability */}
-      <div style={{ position:"absolute",inset:0,pointerEvents:"none",background:"rgba(0,0,0,0.42)" }} />
-      <div style={{ position:"absolute",inset:0,pointerEvents:"none",background:"radial-gradient(ellipse 55% 35% at 50% 50%,rgba(255,255,255,0.05) 0%,transparent 70%)" }} />
-
-      {/* 3-D floating stage */}
-      <motion.div
-        style={{ rotateX:rotX, rotateY:rotY, transformStyle:"preserve-3d", position:"relative", zIndex:1 }}
-        animate={{ y:[0,-14,0] }}
-        transition={{ duration:9, repeat:Infinity, ease:"easeInOut" }}
-      >
-        {/* title */}
-        <div style={{ textAlign:"center", marginBottom:28, fontSize:12, fontWeight:700, letterSpacing:".18em", color:"rgba(255,255,255,0.8)", textTransform:"uppercase", textShadow:"0 2px 12px rgba(0,0,0,0.7)" }}>
-          RAG Pipeline · NexaSense
+      {/* ── header bar ── */}
+      <div className="flex items-center justify-between px-5 py-3.5 border-b border-white/[0.06]">
+        {/* traffic-light dots */}
+        <div className="flex items-center gap-1.5">
+          <span className="w-3 h-3 rounded-full bg-rose-500/70 ring-1 ring-rose-500/40" />
+          <span className="w-3 h-3 rounded-full bg-amber-400/70 ring-1 ring-amber-400/40" />
+          <span className="w-3 h-3 rounded-full bg-emerald-500/70 ring-1 ring-emerald-500/40" />
         </div>
+        {/* title */}
+        <span className="text-[11px] font-semibold tracking-widest uppercase text-slate-500 select-none">
+          RAG · Pipeline · Live
+        </span>
+        {/* live pulse */}
+        <div className="flex items-center gap-1.5">
+          <span className="relative flex h-1.5 w-1.5">
+            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
+            <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-emerald-500" />
+          </span>
+          <span className="text-[10px] text-emerald-500/70 font-medium tracking-wide">LIVE</span>
+        </div>
+      </div>
 
-        {/* ── Q ── */}
-        <Row><Pill>💬 User Question</Pill></Row>
-        <div style={{ height:8 }} />
-        <Row><LaneConnector /></Row>
-        <div style={{ height:4 }} />
+      {/* ── scale wrapper so content never overflows on mobile ── */}
+      <div
+        ref={ref}
+        style={{
+          width: "100%",
+          overflowX: scale < 1 ? "hidden" : "visible",
+        }}
+      >
+        <div
+          style={{
+            transformOrigin: "top center",
+            transform: `scale(${scale})`,
+            // keep layout height in sync with visual height
+            marginBottom: `${-(contentH * (1 - scale))}px`,
+          }}
+        >
+          {/* INTERNAL 3-D CONTENT */}
+          <div
+            style={{
+              position:"relative", width:"100%", minHeight:640,
+              background:"transparent",
+              borderRadius:0,
+              border:"none",
+              boxShadow:"none",
+              overflow:"hidden",
+              padding:"36px 24px 52px",
+              perspective:"1600px",
+              fontFamily:"'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace",
+            }}
+          >
+            {/* dark overlay for readability */}
+            <div style={{ position:"absolute",inset:0,pointerEvents:"none",background:"rgba(0,0,0,0.22)" }} />
 
-        {/* ══ CACHE LAYER ══
-            Q → ExactCache
-            ExactCache --HIT--> A   ExactCache --MISS--> Spell (below)
-            SemCache   --HIT--> A   SemCache   --MISS--> History (below)
-            Spell → Expand → SemCache  (handled as left-to-right inside lane)
-        */}
-        <Lane label="Cache Layer" color={C.cache} border={C.cacheBorder} dim={C.cacheDim} delay={0.05}>
-          {/* row: Spell → Expand → SemCache with diamonds mixed in */}
-          {/* Layout: ExactCache --MISS--> Spell --> Expand --> SemCache --MISS--> (exit below) */}
-          {/*         ExactCache --HIT --> Answer (shown as side label)                         */}
-          <Row gap={10} wrap={false}>
-            <Col gap={4}>
-              <Diamond color={C.cache} border={C.cacheBorder} dim={C.cacheDim} delay={0.08}>
-                Exact<br/>Cache?
-              </Diamond>
-              <div style={{ fontSize:9, color:C.cache, fontWeight:700, textShadow:"0 1px 4px rgba(0,0,0,0.7)" }}>HIT ↑ / MISS →</div>
-            </Col>
-            <HArrow color={C.cache} label="MISS" minW={20} maxW={44} />
-            <PNode color={C.cache} border={C.cacheBorder} dim={C.cacheDim} badge="Gemini" delay={0.12}>Spell<br/>Correction</PNode>
-            <HArrow color={C.cache} minW={16} maxW={32} />
-            <PNode color={C.cache} border={C.cacheBorder} dim={C.cacheDim} badge="Gemini" delay={0.16}>Query<br/>Expansion</PNode>
-            <HArrow color={C.cache} minW={16} maxW={32} />
-            <Col gap={4}>
-              <Diamond color={C.cache} border={C.cacheBorder} dim={C.cacheDim} delay={0.20}>
-                Semantic<br/>Cache?
-              </Diamond>
-              <div style={{ fontSize:9, color:C.cache, fontWeight:700, textShadow:"0 1px 4px rgba(0,0,0,0.7)" }}>HIT ↑ / MISS ↓</div>
-            </Col>
-          </Row>
+            {/* 3-D floating stage */}
+            <motion.div
+              style={{ rotateX:rotX, rotateY:rotY, transformStyle:"preserve-3d", position:"relative", zIndex:1 }}
+              animate={{ y:[0,-14,0] }}
+              transition={{ duration:9, repeat:Infinity, ease:"easeInOut" }}
+            >
+              {/* title */}
+              <div style={{ textAlign:"center", marginBottom:28, fontSize:12, fontWeight:700, letterSpacing:".18em", color:"rgba(255,255,255,0.8)", textTransform:"uppercase", textShadow:"0 2px 12px rgba(0,0,0,0.7)" }}>
+                RAG Pipeline · NexaSense
+              </div>
 
-          {/* HIT target — shown as shared answer pill */}
-          <div style={{ display:"flex", justifyContent:"flex-end", marginTop:10 }}>
-            <div style={{ fontSize:9, color:"rgba(253,230,138,0.85)", letterSpacing:".06em", border:"1px solid rgba(253,230,138,0.4)", borderRadius:20, padding:"2px 12px", background:"rgba(0,0,0,0.4)", backdropFilter:"blur(4px)", textShadow:"0 1px 4px rgba(0,0,0,0.6)" }}>
-              ↑ HIT on Exact or Semantic Cache → ✅ Final Answer immediately
-            </div>
+              {/* ── Q ── */}
+              <Row><Pill>💬 User Question</Pill></Row>
+              <div style={{ height:8 }} />
+              <Row><LaneConnector /></Row>
+              <div style={{ height:4 }} />
+
+              <Lane label="Cache Layer" color={C.cache} border={C.cacheBorder} dim={C.cacheDim} delay={0.05}>
+                <Row gap={10} wrap={false}>
+                  <Col gap={4}>
+                    <Diamond color={C.cache} border={C.cacheBorder} dim={C.cacheDim} delay={0.08}>
+                      Exact<br/>Cache?
+                    </Diamond>
+                    <div style={{ fontSize:9, color:C.cache, fontWeight:700, textShadow:"0 1px 4px rgba(0,0,0,0.7)" }}>HIT ↑ / MISS →</div>
+                  </Col>
+                  <HArrow color={C.cache} label="MISS" minW={20} maxW={44} />
+                  <PNode color={C.cache} border={C.cacheBorder} dim={C.cacheDim} badge="Gemini" delay={0.12}>Spell<br/>Correction</PNode>
+                  <HArrow color={C.cache} minW={16} maxW={32} />
+                  <PNode color={C.cache} border={C.cacheBorder} dim={C.cacheDim} badge="Gemini" delay={0.16}>Query<br/>Expansion</PNode>
+                  <HArrow color={C.cache} minW={16} maxW={32} />
+                  <Col gap={4}>
+                    <Diamond color={C.cache} border={C.cacheBorder} dim={C.cacheDim} delay={0.20}>
+                      Semantic<br/>Cache?
+                    </Diamond>
+                    <div style={{ fontSize:9, color:C.cache, fontWeight:700, textShadow:"0 1px 4px rgba(0,0,0,0.7)" }}>HIT ↑ / MISS ↓</div>
+                  </Col>
+                </Row>
+                <div style={{ display:"flex", justifyContent:"flex-end", marginTop:10 }}>
+                  <div style={{ fontSize:9, color:"rgba(253,230,138,0.85)", letterSpacing:".06em", border:"1px solid rgba(253,230,138,0.4)", borderRadius:20, padding:"2px 12px", background:"rgba(0,0,0,0.4)", backdropFilter:"blur(4px)", textShadow:"0 1px 4px rgba(0,0,0,0.6)" }}>
+                    ↑ HIT on Exact or Semantic Cache → ✅ Final Answer immediately
+                  </div>
+                </div>
+              </Lane>
+
+              <LaneConnector label="MISS" />
+
+              <Lane label="Pre-Processing" color={C.pre} border={C.preBorder} dim={C.preDim} delay={0.25}>
+                <Row gap={12} wrap={false}>
+                  <PNode color={C.pre} border={C.preBorder} dim={C.preDim} delay={0.28}>Load Conversation<br/>Context</PNode>
+                  <HArrow color={C.pre} minW={20} maxW={48} />
+                  <PNode color={C.pre} border={C.preBorder} dim={C.preDim} badge="Gemini" delay={0.32}>Contextual<br/>Rewrite</PNode>
+                </Row>
+              </Lane>
+
+              <LaneConnector />
+
+              <Lane label="Retrieval" color={C.ret} border={C.retBorder} dim={C.retDim} delay={0.36}>
+                <Row>
+                  <PNode color={C.ret} border={C.retBorder} dim={C.retDim} badge="HyDE" delay={0.38}>
+                    Hypothetical Doc Generation
+                  </PNode>
+                </Row>
+                <div style={{ display:"flex", justifyContent:"center", gap:80, marginTop:6 }}>
+                  <VArrow color={C.retBorder} h={18} />
+                  <VArrow color={C.retBorder} h={18} />
+                </div>
+                <Row gap={24}>
+                  <PNode color={C.ret} border={C.retBorder} dim={C.retDim} badge="ChromaDB" delay={0.42}>
+                    Multi-Doc<br/>Vector Search
+                  </PNode>
+                  <PNode color={C.ret} border={C.retBorder} dim={C.retDim} badge="PostgreSQL" delay={0.45}>
+                    Full-Text<br/>Search
+                  </PNode>
+                </Row>
+                <div style={{ display:"flex", justifyContent:"center", gap:80, marginTop:6 }}>
+                  <VArrow color={C.retBorder} h={18} />
+                  <VArrow color={C.retBorder} h={18} />
+                </div>
+                <Row gap={12}>
+                  <PNode color={C.ret} border={C.retBorder} dim={C.retDim} delay={0.48}>
+                    Deduplicate + Merge
+                  </PNode>
+                  <HArrow color={C.ret} minW={20} maxW={48} />
+                  <PNode color={C.ret} border={C.retBorder} dim={C.retDim} delay={0.51}>
+                    Semantic Re-rank<br/>→ Top 7 Chunks
+                  </PNode>
+                </Row>
+              </Lane>
+
+              <LaneConnector />
+
+              <Lane label="Generation" color={C.gen} border={C.genBorder} dim={C.genDim} delay={0.54}>
+                <Row>
+                  <Diamond color={C.gen} border={C.genBorder} dim={C.genDim} delay={0.56}>
+                    Chunks<br/>Found?
+                  </Diamond>
+                </Row>
+                <div style={{ display:"flex", gap:20, marginTop:20, alignItems:"flex-start", justifyContent:"center", flexWrap:"wrap" }}>
+                  <Col gap={10} style={{ minWidth:150, alignItems:"center" }}>
+                    <BranchTag color={C.gen} border={C.genBorder}>None</BranchTag>
+                    <VArrow color={C.genBorder} h={16} />
+                    <PNode color={C.gen} border={C.genBorder} dim={C.genDim} badge="Gemini" delay={0.58}>
+                      Out-of-Domain<br/>Rejection
+                    </PNode>
+                    <VArrow color={C.genBorder} h={16} />
+                    <Pill gold delay={0.60}>✅ Final Answer</Pill>
+                  </Col>
+                  <div style={{ width:1, minHeight:180, background:"rgba(255,255,255,0.1)", alignSelf:"stretch" }} />
+                  <Col gap={0} style={{ flex:1, minWidth:220, alignItems:"center" }}>
+                    <BranchTag color={C.gen} border={C.genBorder}>Found</BranchTag>
+                    <VArrow color={C.genBorder} h={14} />
+                    <PNode color={C.gen} border={C.genBorder} dim={C.genDim} delay={0.60} style={{ width:"100%", maxWidth:240 }}>
+                      Context Compression
+                    </PNode>
+                    <VArrow color={C.genBorder} h={14} />
+                    <PNode color={C.gen} border={C.genBorder} dim={C.genDim} badge="Groq · Llama 3.3 70B" delay={0.63} style={{ width:"100%", maxWidth:240 }}>
+                      Draft Answer
+                    </PNode>
+                    <VArrow color={C.genBorder} h={14} />
+                    <PNode color={C.gen} border={C.genBorder} dim={C.genDim} badge="Gemini" delay={0.66} style={{ width:"100%", maxWidth:240 }}>
+                      Reasoning + Refinement
+                    </PNode>
+                    <VArrow color={C.genBorder} h={14} />
+                    <PNode color={C.gen} border={C.genBorder} dim={C.genDim} badge="Gemini" delay={0.69} style={{ width:"100%", maxWidth:240 }}>
+                      Self-Reflection + Confidence
+                    </PNode>
+                  </Col>
+                </div>
+              </Lane>
+
+              <LaneConnector />
+
+              <Row>
+                <PNode color={C.ans} border={C.ansBorder} dim="rgba(253,230,138,0.14)" delay={0.72} style={{ minWidth:240, fontSize:13 }}>
+                  💾 Save to Semantic Cache
+                </PNode>
+              </Row>
+
+              <LaneConnector />
+
+              <Row>
+                <Pill gold delay={0.75}>✅ Final Answer + Sources</Pill>
+              </Row>
+
+            </motion.div>
           </div>
-        </Lane>
+        </div>
+      </div>
 
-        <LaneConnector label="MISS" />
-
-        {/* ══ PRE-PROCESSING ══
-            History → Rewrite  (Spell/Expand already done in Cache lane above)
-        */}
-        <Lane label="Pre-Processing" color={C.pre} border={C.preBorder} dim={C.preDim} delay={0.25}>
-          <Row gap={12} wrap={false}>
-            <PNode color={C.pre} border={C.preBorder} dim={C.preDim} delay={0.28}>Load Conversation<br/>Context</PNode>
-            <HArrow color={C.pre} minW={20} maxW={48} />
-            <PNode color={C.pre} border={C.preBorder} dim={C.preDim} badge="Gemini" delay={0.32}>Contextual<br/>Rewrite</PNode>
-          </Row>
-        </Lane>
-
-        <LaneConnector />
-
-        {/* ══ RETRIEVAL ══
-            HyDE
-            ↓        ↓
-          VecSearch  KwSearch
-               ↓
-             Merge → Rerank
-        */}
-        <Lane label="Retrieval" color={C.ret} border={C.retBorder} dim={C.retDim} delay={0.36}>
-          {/* HyDE */}
-          <Row>
-            <PNode color={C.ret} border={C.retBorder} dim={C.retDim} badge="HyDE" delay={0.38}>
-              Hypothetical Doc Generation
-            </PNode>
-          </Row>
-
-          {/* split down to two parallel searches */}
-          <div style={{ display:"flex", justifyContent:"center", gap:80, marginTop:6 }}>
-            <VArrow color={C.retBorder} h={18} />
-            <VArrow color={C.retBorder} h={18} />
-          </div>
-
-          {/* parallel row */}
-          <Row gap={24}>
-            <PNode color={C.ret} border={C.retBorder} dim={C.retDim} badge="ChromaDB" delay={0.42}>
-              Multi-Doc<br/>Vector Search
-            </PNode>
-            <PNode color={C.ret} border={C.retBorder} dim={C.retDim} badge="PostgreSQL" delay={0.45}>
-              Full-Text<br/>Search
-            </PNode>
-          </Row>
-
-          {/* merge arrow */}
-          <div style={{ display:"flex", justifyContent:"center", gap:80, marginTop:6 }}>
-            <VArrow color={C.retBorder} h={18} />
-            <VArrow color={C.retBorder} h={18} />
-          </div>
-
-          {/* merge + rerank */}
-          <Row gap={12}>
-            <PNode color={C.ret} border={C.retBorder} dim={C.retDim} delay={0.48}>
-              Deduplicate + Merge
-            </PNode>
-            <HArrow color={C.ret} minW={20} maxW={48} />
-            <PNode color={C.ret} border={C.retBorder} dim={C.retDim} delay={0.51}>
-              Semantic Re-rank<br/>→ Top 7 Chunks
-            </PNode>
-          </Row>
-        </Lane>
-
-        <LaneConnector />
-
-        {/* ══ GENERATION ══
-            EarlyExit
-            ├── None  → Fallback → A
-            └── Found → Compress → Draft → Refine → Reflect
-        */}
-        <Lane label="Generation" color={C.gen} border={C.genBorder} dim={C.genDim} delay={0.54}>
-          {/* EarlyExit */}
-          <Row>
-            <Diamond color={C.gen} border={C.genBorder} dim={C.genDim} delay={0.56}>
-              Chunks<br/>Found?
-            </Diamond>
-          </Row>
-
-          {/* two branches side-by-side */}
-          <div style={{ display:"flex", gap:20, marginTop:20, alignItems:"flex-start", justifyContent:"center", flexWrap:"wrap" }}>
-
-            {/* None branch */}
-            <Col gap={10} style={{ minWidth:150, alignItems:"center" }}>
-              <BranchTag color={C.gen} border={C.genBorder}>None</BranchTag>
-              <VArrow color={C.genBorder} h={16} />
-              <PNode color={C.gen} border={C.genBorder} dim={C.genDim} badge="Gemini" delay={0.58}>
-                Out-of-Domain<br/>Rejection
-              </PNode>
-              <VArrow color={C.genBorder} h={16} />
-              <Pill gold delay={0.60}>✅ Final Answer</Pill>
-            </Col>
-
-            {/* divider */}
-            <div style={{ width:1, minHeight:180, background:"rgba(255,255,255,0.1)", alignSelf:"stretch" }} />
-
-            {/* Found branch — vertical chain */}
-            <Col gap={0} style={{ flex:1, minWidth:220, alignItems:"center" }}>
-              <BranchTag color={C.gen} border={C.genBorder}>Found</BranchTag>
-              <VArrow color={C.genBorder} h={14} />
-              <PNode color={C.gen} border={C.genBorder} dim={C.genDim} delay={0.60} style={{ width:"100%", maxWidth:240 }}>
-                Context Compression
-              </PNode>
-              <VArrow color={C.genBorder} h={14} />
-              <PNode color={C.gen} border={C.genBorder} dim={C.genDim} badge="Groq · Llama 3.3 70B" delay={0.63} style={{ width:"100%", maxWidth:240 }}>
-                Draft Answer
-              </PNode>
-              <VArrow color={C.genBorder} h={14} />
-              <PNode color={C.gen} border={C.genBorder} dim={C.genDim} badge="Gemini" delay={0.66} style={{ width:"100%", maxWidth:240 }}>
-                Reasoning + Refinement
-              </PNode>
-              <VArrow color={C.genBorder} h={14} />
-              <PNode color={C.gen} border={C.genBorder} dim={C.genDim} badge="Gemini" delay={0.69} style={{ width:"100%", maxWidth:240 }}>
-                Self-Reflection + Confidence
-              </PNode>
-            </Col>
-          </div>
-        </Lane>
-
-        <LaneConnector />
-
-        {/* ── SAVE CACHE ── */}
-        <Row>
-          <PNode color={C.ans} border={C.ansBorder} dim="rgba(253,230,138,0.14)" delay={0.72} style={{ minWidth:240, fontSize:13 }}>
-            💾 Save to Semantic Cache
-          </PNode>
-        </Row>
-
-        <LaneConnector />
-
-        {/* ── FINAL ANSWER ── */}
-        <Row>
-          <Pill gold delay={0.75}>✅ Final Answer + Sources</Pill>
-        </Row>
-
-      </motion.div>
+      {/* ── bottom fade-out for scroll hint on mobile ── */}
+      <div className="pointer-events-none absolute bottom-0 left-0 right-0 h-12 bg-gradient-to-t from-slate-950/60 to-transparent rounded-b-2xl" />
     </div>
   );
 }

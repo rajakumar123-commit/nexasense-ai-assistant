@@ -152,17 +152,20 @@ async function searchUserDocuments(userId, query, k = 5) {
 
     if (!rows.length) return [];
 
-    const results = [];
-    for (const doc of rows) {
+    // FIX: Parallelize vector lookups across all user documents for a massive speed boost
+    const searchPromises = rows.map(async (doc) => {
       const chunks = await searchDocument(doc.id, query, k);
-      if (chunks?.length) {
-        results.push(...chunks.map(c => ({
+      if (chunks && chunks.length > 0) {
+        return chunks.map(c => ({
           ...c,
           metadata: { ...(c.metadata || {}), documentId: doc.id },
-        })));
+        }));
       }
-    }
-    return results;
+      return [];
+    });
+
+    const resultsArray = await Promise.all(searchPromises);
+    return resultsArray.flat();
 
   } catch (err) {
     logger.error("[VectorSearch] searchUserDocuments error:", err.message);
