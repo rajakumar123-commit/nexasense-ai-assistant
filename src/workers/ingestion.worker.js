@@ -126,7 +126,7 @@ const ingestionWorker = new Worker(
         
         // Update document with scraped title if it was just a raw URL before
         await db.query(
-          "UPDATE documents SET original_name=$1 WHERE id=$2",
+          "UPDATE documents SET original_name=$1, file_name=$1 WHERE id=$2",
           [scraped.title, documentId]
         );
       } else {
