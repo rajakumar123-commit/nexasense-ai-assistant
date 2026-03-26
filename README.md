@@ -855,7 +855,11 @@ Licensed under the [MIT License](LICENSE). © 2025 Rajakumar.
 
 [![Star on GitHub](https://img.shields.io/github/stars/rajakumar123-commit/nexasense-ai-assistant?style=for-the-badge&logo=github&color=FFD700)](https://github.com/rajakumar123-commit/nexasense-ai-assistant)
 
+<<<<<<< HEAD
 *Built with ❤️ and relentless engineering by [Rajakumar](https://github.com/rajakumar123-commit)*
+=======
+*Built with ❤️ and 40 days of focused engineering by [Rajakumar](https://github.com/rajakumar123-commit)*
+>>>>>>> 96b60b7cf98791ca575de0bc9ad8d97b1261fb43
 
 <img src="https://capsule-render.vercel.app/api?type=waving&color=0:24243e,50:302b63,100:0f0c29&height=100&section=footer" width="100%"/>
 
