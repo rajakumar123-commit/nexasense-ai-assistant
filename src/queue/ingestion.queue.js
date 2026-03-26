@@ -46,10 +46,10 @@ const ingestionQueue = new Queue(QUEUE_NAME, {
 // Add ingestion job
 // ------------------------------------------------------------
 
-async function addIngestionJob({ documentId, filePath, userId }) {
+async function addIngestionJob({ documentId, filePath, url, userId }) {
 
-  if (!documentId || !filePath) {
-    throw new Error("Invalid ingestion job payload");
+  if (!documentId || (!filePath && !url)) {
+    throw new Error("Invalid ingestion job payload: Must provide either filePath or url");
   }
 
   try {
@@ -61,6 +61,7 @@ async function addIngestionJob({ documentId, filePath, userId }) {
       {
         documentId,
         filePath,
+        url,
         userId
       },
 

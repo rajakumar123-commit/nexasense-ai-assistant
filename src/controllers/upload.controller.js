@@ -16,6 +16,8 @@ const { addIngestionJob } = require("../queue/ingestion.queue");
 
 const ALLOWED_TYPES = [
   "application/pdf",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  "text/plain",
   "text/html"
 ];
 
@@ -56,7 +58,7 @@ async function uploadFile(req, res) {
 
       return res.status(400).json({
         success: false,
-        error: "Only PDF files are allowed"
+        error: "Only PDF, DOCX, and TXT files are allowed"
       });
 
     }
