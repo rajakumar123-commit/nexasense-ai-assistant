@@ -386,11 +386,12 @@ sequenceDiagram
 
 | Method | Endpoint | Auth | Description |
 |---|---|---|---|
-| `POST` | `/register` | — | Register; grant 100 credits; send welcome email |
-| `POST` | `/login` | — | Return JWT access token + set HTTP-only refresh cookie |
-| `POST` | `/logout` | ✅ | Clear refresh cookie |
-| `POST` | `/refresh` | 🍪 cookie | Issue new access token |
-| `GET` | `/me` | ✅ | Current user profile + credit balance |
+| `POST` | `/signup` | — | Register; grant 100 credits; send welcome email |
+| `POST` | `/login` | — | Return JWT access token + refresh token in response body |
+| `POST` | `/refresh` | — | Send `refreshToken` in body → get new access token |
+| `GET` | `/me` | ✅ | Current user profile |
+
+> **Auth rate limit:** 20 requests per 15 minutes on all `/api/auth` routes.
 
 </details>
 
@@ -439,6 +440,8 @@ sequenceDiagram
 |---|---|---|
 | `POST` | `/create-order` | Create Razorpay order server-side; INSERT pending transaction |
 | `POST` | `/verify` | HMAC verify → atomic credit update via `SELECT FOR UPDATE` |
+
+> **Route:** `/api/payments` (plural)
 
 **Conversations — `/api/conversations`**
 
@@ -493,14 +496,15 @@ sequenceDiagram
     RZ-->>U: User pays ₹699
     U->>BE:  POST /api/payment/verify { order_id, payment_id, signature }
 
-    BE->>TX:  BEGIN; SELECT * FROM transactions FOR UPDATE
-    Note over TX: Row-level lock — prevents race condition
-    BE->>BE:  Check tx.status !== "paid" (idempotency)
-    BE->>BE:  HMAC-SHA256 verify signature
-    BE->>TX:  UPDATE status = paid, payment_id, signature
-    BE->>UR:  UPDATE credits = credits + 1000 RETURNING credits
-    BE->>TX:  COMMIT
-    BE-->>U:  { creditsAdded: 1000, currentCredits }
+    BE->>TX: BEGIN transaction
+    BE->>TX: SELECT FROM transactions WHERE order_id FOR UPDATE
+    Note over TX: Row-level lock prevents race condition
+    BE->>BE: Check tx.status is not paid (idempotency)
+    BE->>BE: HMAC-SHA256 verify signature
+    BE->>TX: UPDATE status = paid, payment_id, signature
+    BE->>UR: UPDATE credits = credits + 1000
+    BE->>TX: COMMIT
+    BE-->>U: creditsAdded + currentCredits
 ```
 
 [↑ Back to Top](#-table-of-contents)
@@ -540,12 +544,14 @@ flowchart TD
 
 | Table | Key columns | Purpose |
 |---|---|---|
-| `users` | `id (UUID), email, password_hash, full_name, role, credits, is_active` | Identity + credit ledger |
+| `users` | `id (UUID), email, password_hash, full_name, role, role_id, credits, is_active` | Identity + credit ledger |
+| `roles` | `id (UUID), name (user/admin)` | Role definitions — seeded by `seedAdmin.js` |
 | `documents` | `id, user_id, file_name, status, chunk_count, summary, error_msg` | Document state machine |
 | `chunks` | `id, document_id, content, chunk_index, search_vector` | Text chunks + FTS (auto-populated by DB trigger) |
 | `conversations` | `id, user_id, document_id, title, created_at` | Conversation containers |
 | `messages` | `id, conversation_id, role, content, created_at` | Individual chat turns |
 | `transactions` | `id, user_id, razorpay_order_id, razorpay_payment_id, razorpay_signature, credits_bought, status` | Immutable payment audit log |
+| `refresh_tokens` | `id, user_id, token, expires_at` | Persisted refresh tokens — enables server-side session revocation |
 | `query_metrics` | `id, user_id, document_id, total_ms, from_cache, created_at` | Per-query performance telemetry |
 
 > **FTS Trigger:** `INSERT INTO chunks` automatically runs `to_tsvector('english', content)` via a PostgreSQL trigger — zero application-level ETL for full-text search.
@@ -903,7 +909,7 @@ Licensed under the [MIT License](LICENSE). © 2025 Rajakumar.
 
 <div align="center">
 
-[![Star on GitHub](https://img.shields.io/github/stars/rajakumar123-commit/nexasense-ai-assistant?style=for-the-badge&logo=github&color=FFD700)](https://github.com/rajakumar123-commit/nexasense-ai-assistant)
+[![Portfolio Project](https://img.shields.io/badge/Portfolio-Production%20SaaS-blueviolet?style=for-the-badge&logo=github)](https://github.com/rajakumar123-commit/nexasense-ai-assistant)
 
 *Built with ❤️ and relentless engineering by [Rajakumar](https://github.com/rajakumar123-commit)*
 
