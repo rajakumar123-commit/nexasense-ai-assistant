@@ -95,16 +95,18 @@ async function queryDocument(req, res) {
     // Ensure document exists
     // ---------------------------------------------------------
 
-    const docCheck = await db.query(
-      `SELECT id FROM documents WHERE id=$1`,
-      [documentId]
-    );
+    if (documentId !== "all") {
+      const docCheck = await db.query(
+        `SELECT id FROM documents WHERE id=$1`,
+        [documentId]
+      );
 
-    if (!docCheck.rows.length)
-      return res.status(404).json({
-        success: false,
-        error: "document not found",
-      });
+      if (!docCheck.rows.length)
+        return res.status(404).json({
+          success: false,
+          error: "document not found",
+        });
+    }
 
     // ---------------------------------------------------------
     // Ensure conversation exists

@@ -68,15 +68,17 @@ async function streamQuery(req, res) {
     // Check document exists
     // ---------------------------------------------------------
 
-    const docCheck = await db.query(
-      `SELECT id FROM documents WHERE id=$1`,
-      [documentId]
-    );
+    if (documentId !== "all") {
+      const docCheck = await db.query(
+        `SELECT id FROM documents WHERE id=$1`,
+        [documentId]
+      );
 
-    if (!docCheck.rows.length) {
-      clearInterval(heartbeatTimer);
-      sendError(res, "document not found");
-      return closeStream(res);
+      if (!docCheck.rows.length) {
+        clearInterval(heartbeatTimer);
+        sendError(res, "document not found");
+        return closeStream(res);
+      }
     }
 
 

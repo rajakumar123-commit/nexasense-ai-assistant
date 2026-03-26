@@ -208,7 +208,19 @@ function Chat() {
               {activeSessionData?.title || "Select a document to start chatting"}
             </h2>
             {documentId && (
-              <p className="text-xs text-slate-500">Document ID: {documentId.slice(0, 8)}…</p>
+              <p className="text-xs flex items-center gap-1.5 text-slate-400 font-medium mt-0.5">
+                {documentId === "all" ? (
+                  <>
+                    <svg className="w-3.5 h-3.5 text-blue-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" /></svg>
+                    Global Context: All Documents
+                  </>
+                ) : (
+                  <>
+                    <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" /></svg>
+                    Document: {documentId.slice(0, 8)}…
+                  </>
+                )}
+              </p>
             )}
           </div>
           {!documentId && (
@@ -233,10 +245,12 @@ function Chat() {
               <h3 className="text-lg font-semibold text-slate-200 mb-2">
                 {documentId ? "Start a conversation" : "No document selected"}
               </h3>
-              <p className="text-slate-400 text-sm max-w-xs">
-                {documentId
-                  ? "Ask any question about your uploaded document. You can ask in Hindi, English, or any language!"
-                  : "Go to the Workspace and click 'Chat' on a document to start."}
+              <p className="text-slate-400 text-sm max-w-md">
+                {documentId === "all"
+                  ? "You are chatting across ALL your uploaded documents! Ask away in English, Hindi, or any language."
+                  : documentId
+                    ? "Ask any question about your uploaded document. You can ask in Hindi, English, or any language!"
+                    : "Go to the Workspace and click 'Chat' on a document to start."}
               </p>
             </motion.div>
           )}
@@ -302,7 +316,7 @@ function Chat() {
               <textarea
                 ref={textareaRef}
                 className={`w-full bg-slate-800/80 border border-slate-700 rounded-xl p-3.5 pr-12 resize-none text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500/60 focus:border-blue-500/50 transition min-h-[52px] max-h-32 ${credits === 0 ? "opacity-50 cursor-not-allowed" : ""}`}
-                placeholder={credits === 0 ? "You have 0 credits. Upgrade to ask questions." : documentId ? "Ask a question about your document…" : "Select a document first…"}
+                placeholder={credits === 0 ? "You have 0 credits. Upgrade to ask questions." : documentId === "all" ? "Search across all your documents..." : documentId ? "Ask a question about your document…" : "Select a document first…"}
                 value={question}
                 onChange={e => setQuestion(e.target.value)}
                 onKeyDown={handleKeyDown}

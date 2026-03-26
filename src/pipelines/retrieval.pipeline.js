@@ -69,14 +69,13 @@ function dedupe(chunks = []) {
 
 async function extractDocumentDomain(userId, documentId, seedQuery) {
   try {
-    let domainChunks = userId
+    let domainChunks = (userId && documentId === "all")
       ? await searchUserDocuments(userId, seedQuery, 5)
       : await searchDocument(documentId, seedQuery, 5);
 
     if (!domainChunks || !domainChunks.length) {
       // Only run keyword fallback when we have a specific document.
-      // In multi-doc (userId) mode documentId may be undefined.
-      if (documentId) {
+      if (documentId && documentId !== "all") {
         domainChunks = await keywordSearch(documentId, seedQuery, 5);
       }
     }
@@ -328,23 +327,20 @@ async function runRetrievalPipeline({ userId, documentId, question, conversation
 
     logger.info("[Pipeline] Step 3: VECTOR RETRIEVAL");
     const vectorPromises = [
-      userId ? searchUserDocuments(userId, hypotheticalDoc) : searchDocument(documentId, hypotheticalDoc),
+      (userId && documentId === "all") ? searchUserDocuments(userId, hypotheticalDoc) : searchDocument(documentId, hypotheticalDoc),
       ...rewrittenQueries.map(q =>
-        userId ? searchUserDocuments(userId, q) : searchDocument(documentId, q)
+        (userId && documentId === "all") ? searchUserDocuments(userId, q) : searchDocument(documentId, q)
       )
     ];
 
 
     // ---------------------------------------------------------
     // KEYWORD RETRIEVAL
-    // Only run keyword search when we have a specific documentId.
-    // In multi-doc (userId) mode the documentId may be undefined,
-    // so keywordSearch would query with WHERE document_id = undefined
-    // and always return []. Skip it in that case.
+    // Only run keyword search when we have a specific non-"all" documentId.
     // ---------------------------------------------------------
 
     logger.info("[Pipeline] Step 4: KEYWORD RETRIEVAL");
-    const keywordQueries = documentId ? [...rewrittenQueries, hypotheticalDoc] : [];
+    const keywordQueries = (documentId && documentId !== "all") ? [...rewrittenQueries, hypotheticalDoc] : [];
     const keywordPromises = keywordQueries.map(q => keywordSearch(documentId, q));
 
     logger.info("[Pipeline] Step 5: AWAITING SEARCH PROMISES");
