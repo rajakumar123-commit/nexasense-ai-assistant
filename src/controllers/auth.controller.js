@@ -99,7 +99,8 @@ async function signup(req, res) {
       refreshToken,
       user: {
         id: user.id, email: user.email,
-        full_name: user.full_name, role: user.role, created_at: user.created_at,
+        full_name: user.full_name, role: user.role, 
+        credits: user.credits, created_at: user.created_at,
       },
     });
 
@@ -118,7 +119,7 @@ async function login(req, res) {
       return res.status(400).json({ success: false, error: 'Email and password are required.' });
 
     const { rows } = await pool.query(
-      `SELECT id, email, full_name, role, role_id, password_hash, is_active, created_at
+      `SELECT id, email, full_name, role, role_id, password_hash, credits, is_active, created_at
        FROM users WHERE LOWER(email) = LOWER($1) LIMIT 1`,
       [email.trim()]
     );
@@ -149,7 +150,8 @@ async function login(req, res) {
       refreshToken,
       user: {
         id: user.id, email: user.email,
-        full_name: user.full_name, role: user.role, created_at: user.created_at,
+        full_name: user.full_name, role: user.role, 
+        credits: user.credits, created_at: user.created_at,
       },
     });
 
@@ -169,7 +171,7 @@ async function refresh(req, res) {
     const payload = jwt.verify(refreshToken, process.env.JWT_REFRESH_SECRET);
 
     const { rows } = await pool.query(
-      `SELECT id, email, full_name, role, role_id, is_active FROM users WHERE id = $1 LIMIT 1`,
+      `SELECT id, email, full_name, role, role_id, credits, is_active FROM users WHERE id = $1 LIMIT 1`,
       [payload.id]
     );
     const user = rows[0];
@@ -179,6 +181,7 @@ async function refresh(req, res) {
     return res.status(200).json({
       success: true,
       accessToken: generateAccessToken(user),
+      credits: user.credits
     });
 
   } catch {
@@ -190,7 +193,7 @@ async function refresh(req, res) {
 async function getMe(req, res) {
   try {
     const { rows } = await pool.query(
-      `SELECT id, email, full_name, role, created_at FROM users WHERE id = $1 LIMIT 1`,
+      `SELECT id, email, full_name, role, credits, created_at FROM users WHERE id = $1 LIMIT 1`,
       [req.user.id]
     );
     if (!rows[0])

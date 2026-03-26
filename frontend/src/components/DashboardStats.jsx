@@ -11,6 +11,7 @@ import {
   Square3Stack3DIcon,
   BoltIcon,
   ClockIcon,
+  CurrencyDollarIcon,
 } from "@heroicons/react/24/outline";
 
 // ─────────────────────────────────────────
@@ -124,6 +125,24 @@ const CARD_CONFIG = [
       gradientText: "from-amber-300 to-amber-500",
     },
   },
+  {
+    title: "Credits",
+    key: "credits",
+    suffix: "",
+    icon: CurrencyDollarIcon,
+    accent: {
+      text: "text-cyan-400",
+      iconBg: "bg-cyan-500/[0.08]",
+      iconRing: "ring-cyan-500/20",
+      iconHoverBg: "group-hover:bg-cyan-500/[0.15]",
+      iconHoverRing: "group-hover:ring-cyan-500/35",
+      glow: "group-hover:shadow-[0_0_32px_rgba(6,182,212,0.12)]",
+      bar: "bg-cyan-500",
+      barGlow: "shadow-[0_0_8px_rgba(6,182,212,0.7)]",
+      borderHover: "hover:ring-cyan-500/20",
+      gradientText: "from-cyan-300 to-cyan-500",
+    },
+  },
 ];
 
 // ─────────────────────────────────────────
@@ -135,7 +154,7 @@ function DashboardStats({ stats }) {
 
   return (
     <motion.div
-      className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5"
+      className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-5"
       variants={gridVariants}
       initial="hidden"
       animate="visible"

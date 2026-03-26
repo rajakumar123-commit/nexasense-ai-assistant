@@ -25,7 +25,7 @@ const { getCachedResult, storeCachedResult } = require("../cache/queryCache");
 const { getSemanticCache, storeSemanticCache } = require("../cache/semanticCache");
 
 const { normalizeQuery } = require("../services/queryNormalizer.service");
-const { recordQueryMetrics } = require("../services/metrics.service");
+const { recordQueryMetrics, ragQueryDuration } = require("../services/metrics.service");
 
 const logger = require("../utils/logger");
 
@@ -506,11 +506,15 @@ async function runRetrievalPipeline({ userId, documentId, question, conversation
       fromCache: false
     }).catch(() => { });
 
+    ragQueryDuration.labels("llama-3.3-70b", "success").observe(result.responseTimeMs / 1000);
+
     return result;
 
   } catch (error) {
 
     logger.error("[Pipeline] Fatal error:", error.message, error.stack);
+
+    ragQueryDuration.labels("llama-3.3-70b", "error").observe((Date.now() - startTime) / 1000);
 
     return {
       answer: "An unexpected error occurred while processing your question.",

@@ -25,6 +25,8 @@ const adminRoutes = require("./routes/admin.routes");
 
 // ✅ ADD THIS
 const paymentRoutes = require("./routes/payment.routes");
+const webhookRoutes = require("./routes/webhook.routes");
+const { metricsMiddleware, getMetrics } = require("./services/metrics.service");
 
 const app = express();
 
@@ -74,7 +76,17 @@ app.use(
 // Body Parsers
 // ============================================================
 
-app.use(express.json({ limit: "50mb" }));
+app.use(
+  express.json({
+    limit: "50mb",
+    verify: (req, res, buf) => {
+      // Capture raw body for webhook signature verification
+      if (req.originalUrl.includes("/webhook")) {
+        req.rawBody = buf.toString();
+      }
+    },
+  })
+);
 app.use(express.urlencoded({ extended: true, limit: "50mb" }));
 
 // ============================================================
@@ -105,6 +117,12 @@ const globalLimiter = rateLimit({
 });
 
 app.use(globalLimiter);
+
+// ------------------------------------------------------------
+// Metrics (Prometheus)
+// ------------------------------------------------------------
+app.use(metricsMiddleware);
+app.get("/api/metrics", getMetrics);
 
 // ============================================================
 // Auth Rate Limiter
@@ -170,8 +188,11 @@ app.use("/api/dashboard", dashboardRoutes);
 // Admin
 app.use("/api/admin", adminRoutes);
 
-// ✅ ADD THIS (PAYMENTS ROUTES)
+// Payments
 app.use("/api/payments", paymentRoutes);
+
+// Webhooks (Public)
+app.use("/api/payment/webhook", webhookRoutes);
 
 // ============================================================
 // 404 Handler

@@ -14,12 +14,9 @@ const logger = require("../utils/logger");
 const { addIngestionJob } = require("../queue/ingestion.queue");
 
 
-// ------------------------------------------------------------
-// Allowed file types
-// ------------------------------------------------------------
-
 const ALLOWED_TYPES = [
-  "application/pdf"
+  "application/pdf",
+  "text/html"
 ];
 
 
@@ -156,10 +153,6 @@ async function uploadFile(req, res) {
 
     logger.error("[Upload] Fatal:", error.message);
 
-    if (req.file?.path && fs.existsSync(req.file.path)) {
-      fs.unlink(req.file.path, () => {});
-    }
-
     return res.status(500).json({
       success: false,
       error: "Upload failed",
@@ -170,6 +163,79 @@ async function uploadFile(req, res) {
 
 }
 
+// ============================================================
+// POST /api/scrape
+// ============================================================
+
+async function scrapeUrl(req, res) {
+  const start = Date.now();
+  const { url } = req.body;
+  const userId = req.user?.id;
+
+  if (!url) {
+    return res.status(400).json({
+      success: false,
+      error: "No URL provided"
+    });
+  }
+
+  try {
+    // ---------------------------------------------------------
+    // Insert document metadata for URL
+    // ---------------------------------------------------------
+    const { rows } = await db.query(
+      `INSERT INTO documents
+       (user_id, file_name, original_name, file_size, status)
+       VALUES ($1,$2,$3,0,'processing')
+       RETURNING id`,
+      [userId, url, url]
+    );
+
+    const documentId = rows[0].id;
+
+    logger.info(`[Scrape] Document created for URL | doc:${documentId} | user:${userId} | url:${url}`);
+
+    // ---------------------------------------------------------
+    // Queue ingestion job with URL instead of filePath
+    // ---------------------------------------------------------
+    try {
+      await addIngestionJob({
+        documentId,
+        url, // Special field for scraper jobs
+        userId
+      });
+    } catch (queueError) {
+      logger.error(`[Scrape] Queue push failed | doc:${documentId} | ${queueError.message}`);
+      await db.query(
+        `UPDATE documents SET status='error', error_msg=$1 WHERE id=$2`,
+        ["Queue ingestion failed", documentId]
+      );
+      return res.status(500).json({
+        success: false,
+        error: "Failed to queue URL for processing"
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      documentId,
+      url,
+      status: "processing",
+      message: "Website URL queued successfully.",
+      responseTimeMs: Date.now() - start
+    });
+
+  } catch (error) {
+    logger.error("[Scrape] Fatal:", error.message);
+    return res.status(500).json({
+      success: false,
+      error: "Scrape failed",
+      details: error.message
+    });
+  }
+}
+
 module.exports = {
-  uploadFile
+  uploadFile,
+  scrapeUrl
 };

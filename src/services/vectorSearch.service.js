@@ -8,6 +8,7 @@
 const { embedSingle }       = require("./sharedEmbedder");
 const { collectionUrl, collectionQueryUrl } = require("../config/chroma");
 const logger                = require("../utils/logger");
+const { vectorSearchDuration } = require("./metrics.service");
 
 // ─── helpers ────────────────────────────────────────────────
 
@@ -124,7 +125,9 @@ async function searchDocument(documentId, query, k = 5) {
       similarity: distances[i]  !== undefined ? 1 - distances[i] : 0,
     }));
 
+    const mmrStart = Date.now();
     const diversified = mmr(queryEmbedding, candidates, k);
+    vectorSearchDuration.labels("chroma").observe((Date.now() - mmrStart) / 1000);
 
     return diversified.map(c => ({
       content:    c.content,

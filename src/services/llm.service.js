@@ -6,6 +6,7 @@
 
 const Groq = require("groq-sdk");
 const logger = require("../utils/logger");
+const { llmTokensTotal } = require("./metrics.service");
 
 // Client is created lazily inside generateAnswer so that
 // dotenv.config() has time to run before the key is read.
@@ -150,19 +151,19 @@ ${question}
 
     const response =
       await getClient().chat.completions.create({
-
         model: MODEL_NAME,
-
         messages,
-
         max_tokens: MAX_TOKENS,
-
         temperature: 0.15,
         top_p: 0.9,
         frequency_penalty: 0.1
-
       });
 
+    // Track tokens if usage data is available
+    if (response?.usage) {
+      llmTokensTotal.labels(MODEL_NAME, "prompt").inc(response.usage.prompt_tokens || 0);
+      llmTokensTotal.labels(MODEL_NAME, "completion").inc(response.usage.completion_tokens || 0);
+    }
 
     const answer =
       response?.choices?.[0]?.message?.content?.trim() || "";

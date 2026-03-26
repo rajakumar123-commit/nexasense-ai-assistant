@@ -140,6 +140,10 @@ NexaSense is a full-stack **AI Document Intelligence** SaaS. Users register, upl
 | No auth | JWT access tokens + HTTP-only refresh cookies + RBAC (USER / ADMIN) |
 | Blocking ingestion | BullMQ async worker, idempotency guard, ONNX crash protection, retry backoff |
 | Manual deploy | GitHub Actions CI/CD — every `git push` auto-deploys to EC2 |
+| **Web Scraping** | **Live URL Indexing**: Paste any URL to scrape & index main content |
+| **Automated Billing** | **Razorpay Webhooks**: Atomic HMAC-verified credit reconciliation |
+| **Observability** | **Prometheus + Grafana**: Live metrics (latency, tokens, throughput) |
+| **Safety** | **Git Tagging Strategy**: Versioned rollbacks for production stability |
 
 [↑ Back to Top](#-table-of-contents)
 
@@ -188,7 +192,9 @@ Measured under standard production load on AWS EC2 `t3.micro`:
 | **Security** | bcrypt, jsonwebtoken, helmet, express-rate-limit | Salted hashes, short-lived JWTs, HTTP-only cookies |
 | **Spell Check** | nspell + dictionary-en | Query pre-processing before LLM calls |
 | **Email** | Nodemailer + Gmail SMTP | Welcome email on signup — fire-and-forget |
-| **Containers** | Docker, Docker Compose | 6 services: postgres, redis, chroma, backend, worker, frontend |
+| **Containers** | Docker, Docker Compose | 8 services: postgres, redis, chroma, backend, worker, frontend, prometheus, grafana |
+| **Observability**| Prometheus & Grafana | Custom `prom-client` instrumentation + Grafana Dashboard |
+| **Scraper** | Axios & Cheerio | Clean text extraction from articles (nav/footer/ads removed) |
 | **Reverse Proxy** | Caddy 2 | Auto-SSL via Let's Encrypt, HTTP→HTTPS redirect |
 | **Cloud** | AWS EC2 t3.micro, Ubuntu 22.04 | |
 | **Domain** | Hostinger `.online` TLD | A record → EC2 IP |
@@ -233,6 +239,11 @@ graph TD
     Worker -->|"INSERT chunks\n(FTS trigger)"| PG
     Worker -->|"Store embeddings"| Chroma
     Worker -->|"Summarize + Suggest"| Groq
+
+    subgraph "Observability"
+        BE -->|"Metrics"| Prom["Prometheus :9090"]
+        Prom -->|"Visualize"| Graf["Grafana :3001"]
+    end
 ```
 
 [↑ Back to Top](#-table-of-contents)
@@ -347,6 +358,21 @@ sequenceDiagram
 | **Global Multi-Doc Chat** | Dedicated "Chat With All" master context toggle in the Workspace UI. |
 | **Responsive 3D Pipeline** | Overhauled Three.js stage with `ResizeObserver` for perfect mobile/tablet scaling. |
 | **UUID Stability Layer** | Exhaustive backend sanitization that prevents database crashes during global searches. |
+
+</details>
+
+<details open>
+<summary><strong>🌐 Web-Scraping & Observability (v4.2)</strong></summary>
+<br/>
+
+| Feature | Detail |
+|---|---|
+| **Live URL Indexing** | Scrape main content from any URL using `axios` + `cheerio` (removes nav/ads/scripts). |
+| **Prometheus Metrics** | Full instrumentation of query latency, token usage, and ingestion throughput. |
+| **Grafana Dashboards** | Professional visualization of system health and AI performance metrics. |
+| **Razorpay Webhooks** | 100% automated credit refills via secure, signature-validated asynchronous events. |
+| **HMAC Signature Check**| Zero-trust payment verification using raw-body buffer validation. |
+| **Atomic Transactions** | `SELECT FOR UPDATE` ensures financial data integrity during credit reconciliation. |
 
 </details>
 
@@ -627,7 +653,15 @@ sequenceDiagram
 
 ---
 
-## 11. 💳 Credit & Payment System
+### 11. 💳 Credit & Payment System (v4.2)
+
+NexaSense uses a secure, atomic billing system powered by **Razorpay** and **PostgreSQL Locking**.
+
+- **Registration Bonus**: Every new user is provisioned with **100 free credits** via the `auth.controller.js` signup logic.
+- **Consumption**: 1 credit is deducted per RAG query (Stream or Standard).
+- **Atomic Balance**: We use `SELECT ... FOR UPDATE` on the user row during payment verification to prevent race conditions (double-spend/TOCTOU).
+- **Webhooks**: Automatic credit reconciliation via `POST /api/payment/webhook`. This is secured by HMAC-SHA256 signature verification.
+- **Observability**: Credit consumption and payment success rates are tracked in **Prometheus**.
 
 ```mermaid
 flowchart TD

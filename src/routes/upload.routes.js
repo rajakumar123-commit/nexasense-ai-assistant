@@ -26,4 +26,11 @@ router.post(
   uploadController.uploadFile
 );
 
+router.post(
+  "/scrape",
+  authMiddleware,
+  requirePermission("doc:upload"),
+  uploadController.scrapeUrl
+);
+
 module.exports = router;

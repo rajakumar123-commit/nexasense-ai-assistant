@@ -25,10 +25,12 @@ const connection = require("../config/redis");
 
 const { embedAndStoreChunks } = require("../services/embedder.service");
 const { extractText }          = require("../services/document.service");
+const { scrapeUrl }            = require("../services/scraper.service");
 const recursiveChunk           = require("../utils/recursiveChunk");
 
 const { summarizeDocument }   = require("../services/documentSummary.service");
 const { generateSuggestions } = require("../services/questionSuggestion.service");
+const { ingestionStatusTotal } = require("../services/metrics.service");
 
 const db     = require("../db");
 const logger = require("../utils/logger");
@@ -79,14 +81,14 @@ const ingestionWorker = new Worker(
   QUEUE_NAME,
 
   async (job) => {
+    const { documentId, filePath: rawFilePath, url } = job.data;
+    let filePath = null;
 
-    const { documentId, filePath: rawFilePath } = job.data;
-
-    // Resolve to absolute path — multer gives relative paths like "uploads/foo.pdf"
-    // Inside Docker the working directory is /app so path.resolve works correctly
-    const filePath = path.isAbsolute(rawFilePath)
-      ? rawFilePath
-      : path.resolve(process.cwd(), rawFilePath);
+    if (rawFilePath) {
+      filePath = path.isAbsolute(rawFilePath)
+        ? rawFilePath
+        : path.resolve(process.cwd(), rawFilePath);
+    }
 
     try {
 
@@ -109,19 +111,32 @@ const ingestionWorker = new Worker(
 
       logger.info(`[Worker] Start ingestion: ${documentId}`);
 
-      // ----------------------------------------
-      // Extract text
-      // ----------------------------------------
-
       await db.query(
         "UPDATE documents SET status='extracting' WHERE id=$1",
         [documentId]
       );
 
-      const { text, pageCount } = await extractText(filePath);
+      let text = "";
+      let pageCount = 1;
+
+      if (url) {
+        logger.info(`[Worker] Scraping URL: ${url}`);
+        const scraped = await scrapeUrl(url);
+        text = scraped.content;
+        
+        // Update document with scraped title if it was just a raw URL before
+        await db.query(
+          "UPDATE documents SET original_name=$1 WHERE id=$2",
+          [scraped.title, documentId]
+        );
+      } else {
+        const extracted = await extractText(filePath);
+        text = extracted.text;
+        pageCount = extracted.pageCount;
+      }
 
       if (!text || !text.trim()) {
-        throw new Error("No text could be extracted from this file");
+        throw new Error("No text could be extracted from this source");
       }
 
       logger.info(`[Worker] Extracted ${pageCount} pages`);
@@ -211,6 +226,7 @@ const ingestionWorker = new Worker(
         [chunks.length, documentId]
       );
 
+      ingestionStatusTotal.labels(url ? "url" : "file", "success").inc();
       logger.info(`[Worker] Completed ingestion: ${documentId}`);
 
     } catch (error) {
@@ -224,6 +240,8 @@ const ingestionWorker = new Worker(
          WHERE id=$2`,
         [error.message, documentId]
       ).catch(() => {});
+
+      ingestionStatusTotal.labels(url ? "url" : "file", "failed").inc();
 
       // Re-throw so BullMQ records this as a job failure
       // and triggers the retry + exponential backoff
