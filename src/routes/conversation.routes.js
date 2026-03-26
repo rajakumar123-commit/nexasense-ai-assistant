@@ -77,7 +77,9 @@ router.get("/conversations/document/:documentId", requirePermission("chat:query"
     const userId = req.user.id;
     const { documentId } = req.params;
 
-    if (!isUUID(documentId)) {
+    const isGlobal = documentId === "all";
+
+    if (!isGlobal && !isUUID(documentId)) {
       return res.status(400).json({
         success: false,
         error: "Invalid document ID"
@@ -100,12 +102,12 @@ router.get("/conversations/document/:documentId", requirePermission("chat:query"
              ) as messages
       FROM conversations c
       LEFT JOIN messages m ON m.conversation_id = c.id
-      WHERE c.user_id = $1 AND c.document_id = $2
+      WHERE c.user_id = $1 AND ${isGlobal ? "c.document_id IS NULL" : "c.document_id = $2"}
       GROUP BY c.id, c.document_id, c.created_at
       ORDER BY c.created_at DESC
       LIMIT 100
       `,
-      [userId, documentId]
+      isGlobal ? [userId] : [userId, documentId]
     );
 
     const conversations = rows.map(r => {

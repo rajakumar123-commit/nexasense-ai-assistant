@@ -19,7 +19,7 @@ async function createConversation(userId, documentId) {
       `INSERT INTO conversations (user_id, document_id)
        VALUES ($1,$2)
        RETURNING id, created_at`,
-      [userId, documentId]
+      [userId, documentId === "all" ? null : documentId]
     );
     return rows[0];
   } catch (error) {

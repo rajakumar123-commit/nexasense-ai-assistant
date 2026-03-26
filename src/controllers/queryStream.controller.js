@@ -115,7 +115,7 @@ async function streamQuery(req, res) {
         `INSERT INTO conversations (user_id, document_id)
          VALUES ($1,$2)
          RETURNING id`,
-        [userId, documentId]
+        [userId, documentId === "all" ? null : documentId]
       );
 
       convId = rows[0].id;

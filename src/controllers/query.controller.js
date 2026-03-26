@@ -21,7 +21,7 @@ async function saveMetrics(userId, documentId, result) {
        VALUES ($1,$2,$3,$4,$5,$6,$7)`,
       [
         userId,
-        documentId,
+        documentId === "all" ? null : documentId,
         result.question || null,
         result.responseTimeMs || 0,
         result.chunksRetrieved || 0,
@@ -128,7 +128,7 @@ async function queryDocument(req, res) {
         `INSERT INTO conversations (user_id, document_id)
          VALUES ($1,$2)
          RETURNING id`,
-        [userId, documentId]
+        [userId, documentId === "all" ? null : documentId]
       );
 
       convId = rows[0].id;

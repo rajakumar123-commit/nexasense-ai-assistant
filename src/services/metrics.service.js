@@ -23,7 +23,7 @@ async function recordQueryMetrics({
       `INSERT INTO query_metrics
        (user_id, document_id, total_ms, from_cache)
        VALUES ($1, $2, $3, $4)`,
-      [userId, documentId || null, totalMs, fromCache]
+      [userId, (!documentId || documentId === "all") ? null : documentId, totalMs, fromCache]
     );
 
   } catch (error) {
