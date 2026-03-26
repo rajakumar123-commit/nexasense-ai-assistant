@@ -15,7 +15,7 @@ WORKDIR /app
 
 # Install dumb-init for proper signal handling
 RUN apt-get update \
-  && apt-get install -y --no-install-recommends dumb-init curl \
+  && apt-get install -y --no-install-recommends dumb-init curl ca-certificates \
   && rm -rf /var/lib/apt/lists/*
 
 # Copy package files first (layer cache optimisation)
