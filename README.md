@@ -38,9 +38,11 @@ Razorpay credit billing, CI/CD automation, and HTTPS on a real custom domain.
 > | What | How |
 > |---|---|
 > | **AI Engine** | 10-step RAG pipeline — dual LLM (Groq Llama-3.3-70B + Gemini 1.5 Pro) |
+> | **Hybrid RAG** | Document-first retrieval + seamless world-knowledge fallback |
+> | **Voice AI** | Browser-native Speech-to-Text (Mic) + Text-to-Speech (Speaker) |
 > | **Memory** | Persistent Session History — UUID mapping & PostgreSQL JSON aggregation |
 > | **Performance** | 2-layer cache (LRU + Redis semantic vector) — cache hit = 0 LLM calls |
-> | **Ingestion** | Async BullMQ worker — non-blocking, idempotent, ONNX embeddings (no API cost) |
+> | **Ingestion** | Multi-format (.pdf, .docx, .txt), Async BullMQ worker, ONNX embeddings |
 > | **Billing** | Razorpay — atomic `SELECT FOR UPDATE` credit system |
 > | **Infrastructure** | AWS EC2 + Docker Compose + Caddy HTTPS + GitHub Actions CI/CD |
 > | **Auth** | JWT (15m) + persisted refresh tokens + RBAC (User/Admin) |
@@ -127,6 +129,10 @@ NexaSense is a full-stack **AI Document Intelligence** SaaS. Users register, upl
 | Typical demo | NexaSense |
 |---|---|
 | Single LLM call | Dual-LLM: Groq Llama-3.3-70B (speed) + Gemini 1.5 Pro (reasoning) |
+| Hardcoded rejection | Hybrid AI: Document-first + seamless general knowledge fallback |
+| English only | Cross-lingual RAG: Ask in Hindi &rarr; searches in English &rarr; answers in Hindi |
+| Text chat only | Native Voice AI: Animated Microphone (STT) + Speaker (TTS) |
+| PDF only | Omni-format ingestion: `.pdf` (pdf-parse), `.docx` (mammoth), `.txt` (fs) |
 | No caching | 2-layer cache — in-process LRU (node-cache) + Redis semantic vector cache |
 | Vector search only | Hybrid: ChromaDB cosine similarity **+** PostgreSQL `to_tsvector` full-text |
 | No monetization | Razorpay credit billing with `SELECT … FOR UPDATE` atomic transactions |
@@ -200,7 +206,10 @@ Seven Docker containers share one internal bridge network. **Caddy** terminates 
 ```mermaid
 graph TD
     Internet(["🌐 Internet / Browser"])
+    Voice[["🎙️ Web Speech API\nSTT / TTS"]]
+    
     Internet -->|"HTTPS :443"| Caddy["Caddy\nReverse Proxy\nauto-TLS"]
+    Voice -.->|"Native"| FE
     Caddy -->|"HTTP :80"| FE["Frontend\nNginx + React/Vite"]
 
     FE -->|"REST + JWT"| BE["Backend\nExpress.js :3000"]
@@ -212,6 +221,10 @@ graph TD
     BE -->|"Gemini API"| Gemini["☁️ Gemini 1.5 Pro\nReasoning layer"]
 
     Redis -->|"Dequeue job"| Worker["Worker\nBullMQ · ONNX"]
+    
+    Worker -->|"Extract .txt/docx/pdf"| Parse["Multi-Format Parser"]
+    Parse -->|"Chunk & Embed"| Worker
+    
     Worker -->|"INSERT chunks\n(FTS trigger)"| PG
     Worker -->|"Store embeddings"| Chroma
     Worker -->|"Summarize + Suggest"| Groq
@@ -235,7 +248,7 @@ flowchart TD
     D -- HIT --> ZERO
 
     D -- MISS --> E["Load conversation history\nfrom PostgreSQL"]
-    E --> F["Step 2 · Groq — 1 API call\nSpell-fix · standalone rewrite\n3× query expansion · HyDE doc"]
+    E --> F["Step 2 · Groq — 1 API call\nSpell-fix · standalone rewrite\nCross-lingual translation · 3× expansion · HyDE doc"]
 
     F --> G["Step 3 · ChromaDB search\ncosine · HyDE + all expanded\nPromise.all parallel"]
     F --> H["Step 4 · PostgreSQL FTS\nto_tsvector · all variants\nSkipped in multi-doc mode"]
@@ -246,11 +259,11 @@ flowchart TD
     I --> J["Step 6 · Semantic Reranker\nscore all chunks · keep top 7"]
     J --> K{"Chunks found?"}
 
-    K -- "No chunks" --> L["Gemini context fallback\nDomain answer or graceful rejection"]
-    L --> OUT2(["Return fallback answer"])
+    K -- "No chunks" --> L["Hybrid Knowledge Fallback\nGemini/Groq World Knowledge\n+ Transparency Disclaimer"]
+    L --> OUT2(["Return hybrid answer"])
 
     K -- "Yes" --> M["Step 7 · Context Compression\nGroq strips boilerplate"]
-    M --> N["Step 8 · Answer Generation\nGroq Llama-3.3-70B + context"]
+    M --> N["Step 8 · Answer Generation\nGroq Llama-3.3-70B + Native Language Override"]
     N --> O["Step 9 · Gemini Reasoning\nLogical refinement + validation"]
     O --> P["Self-reflection\nGemini confidence 0-100%"]
     P --> Q["Step 10 · Finalize\nSave to conversation\nCache in LRU + Redis\nRecord query metrics"]
@@ -331,6 +344,21 @@ sequenceDiagram
 | **Gemini Context Fallback** | When retrieval returns 0 chunks, Gemini attempts to answer from domain context — no hallucination |
 | **Multi-Document Mode** | Query across all user documents simultaneously via userId-scoped vector search |
 | **Conversational Memory** | Full conversation history stored in PostgreSQL; Groq rewrites each query as context-aware standalone |
+| **Hybrid Knowledge Fallback** | Seamlessly answers out-of-domain questions using world knowledge with a transparent disclaimer |
+
+</details>
+
+<details open>
+<summary><strong>🎙️ Voice AI & Multilingual Engine (v3.0)</strong></summary>
+<br/>
+
+| Feature | Detail |
+|---|---|
+| **Voice Input (STT)** | Animated microphone button uses browser-native `SpeechRecognition` to instantly transcribe speech. |
+| **Voice Output (TTS)** | Smart speaker button reads AI generations aloud via `speechSynthesis`. |
+| **Cross-Lingual RAG** | AI translates non-English user queries to English for precise vector retrieval. |
+| **Native Language Gen** | AI replies strictly in the user's detected input language, bypassing english source biases. |
+| **User Language Override** | Explicit instructions (e.g. "answer in Marathi") securely override the language auto-detect rule. |
 
 </details>
 
@@ -340,6 +368,7 @@ sequenceDiagram
 
 | Feature | Detail |
 |---|---|
+| **Omni-Format Support** | Upload `.pdf` (pdf-parse), `.docx` (mammoth), and `.txt` (fs) seamlessly. |
 | **Async Ingestion** | BullMQ worker — extract, chunk, embed, summarize — decoupled from API |
 | **Live Status** | `pending → extracting → chunking → embedding → ready` — UI polls reactively |
 | **AI Summary** | Groq auto-generates a paragraph summary after ingestion |
@@ -413,7 +442,7 @@ sequenceDiagram
 | `Signup.jsx` | `/signup` | Registration — grants 100 credits, triggers welcome email |
 | `Dashboard.jsx` | `/dashboard` | Metrics (docs, chunks, queries, cache rate, avg latency, credits) + 3D animation |
 | `Workspace.jsx` | `/workspace` | Drag-and-drop upload, live status cards, delete with confirm modal |
-| `Chat.jsx` | `/chat` | Streaming chat, Pipeline Inspector panel, source cards, conversation sidebar |
+| `Chat.jsx` | `/chat` | Voice Mic (STT), Streaming chat, Pipeline Inspector panel, source cards, conversation sidebar |
 | `AdminPanel.jsx` | `/admin` | Platform-wide user list, credit balances, usage metrics |
 
 **Components** (`/frontend/src/components/`)
@@ -428,7 +457,7 @@ sequenceDiagram
 | `ConfirmModal.jsx` | Glassmorphism confirmation dialog |
 | `ErrorBoundary.jsx` | Class-based global render-error catcher |
 | `Navbar.jsx` | Animated credit counter, low-credit warning, zero-credit upgrade banner |
-| `UploadModal.jsx` | Drag-and-drop file picker with real-time type/size validation |
+| `UploadModal.jsx` | Drag-and-drop file picker with real-time .pdf, .txt, .docx validation |
 | `ConversationSidebar.jsx` | Saved conversations per document |
 
 [↑ Back to Top](#-table-of-contents)
@@ -474,7 +503,7 @@ sequenceDiagram
 
 | Method | Endpoint | Auth | Description |
 |---|---|---|---|
-| `POST` | `/api/upload` | ✅ | Upload PDF; INSERT document; ENQUEUE BullMQ job; return 202 |
+| `POST` | `/api/upload` | ✅ | Upload Document (.pdf/.docx/.txt); ENQUEUE BullMQ job; return 202 |
 
 **Query & Stream**
 
@@ -528,7 +557,7 @@ sequenceDiagram
 | Admin Guard | `admin.middleware.js` | Rejects non-admin requests on admin routes |
 | Permission Guard | `permissionMiddleware.js` | Verifies document belongs to requesting user |
 | Rate Limiter | `rateLimit.middleware.js` | `express-rate-limit` — blocks abuse |
-| Upload Handler | `upload.middleware.js` | Multer — PDF-only, enforced size limit |
+| Upload Handler | `upload.middleware.js` | Multer — Multi-format `.pdf/.docx/.txt`, enforced size limit |
 | Validation | `validation.middleware.js` | Zod request schema validation |
 | Helmet | `app.js` | HTTP security headers |
 | Compression | `app.js` | `compression` middleware — gzip responses |
