@@ -49,27 +49,23 @@ Razorpay credit billing, CI/CD automation, and HTTPS on a real custom domain.
 
 ## 📸 Screenshots
 
-| Login | Dashboard |
-|---|---|
-| ![Login Page](https://rajakumar-nexasense-ai.online) | ![Dashboard](https://rajakumar-nexasense-ai.online/dashboard) |
-
 <div align="center">
 
 **Login & Signup**
 
-![Login](https://raw.githubusercontent.com/rajakumar123-commit/nexasense-ai-assistant/main/docs/login.png)
+![Login](./docs/login.png)
 
 **Dashboard with 3D RAG Pipeline Animation**
 
-![Dashboard](https://raw.githubusercontent.com/rajakumar123-commit/nexasense-ai-assistant/main/docs/dashboard.png)
+![Dashboard](./docs/dashboard.png)
 
 **Workspace — Document Management**
 
-![Workspace](https://raw.githubusercontent.com/rajakumar123-commit/nexasense-ai-assistant/main/docs/workspace.png)
+![Workspace](./docs/workspace.png)
 
 **Chat Interface — Streaming + Source Inspector**
 
-![Chat](https://raw.githubusercontent.com/rajakumar123-commit/nexasense-ai-assistant/main/docs/chat.png)
+![Chat](./docs/chat.png)
 
 > 🌐 **[Try it live →](https://rajakumar-nexasense-ai.online)** to see the full UI including the streaming chat and pipeline inspector.
 
