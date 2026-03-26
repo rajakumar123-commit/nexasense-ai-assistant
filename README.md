@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="https://capsule-render.vercel.app/api?type=waving&color=0:0f0c29,50:302b63,100:24243e&height=160&section=header&text=NexaSense%20AI&fontSize=64&fontColor=ffffff&fontAlignY=40&desc=Enterprise%20RAG%20Platform%20%E2%80%94%20Live%20on%20AWS&descAlignY=62&descSize=17&animation=fadeIn" width="100%"/>
+<img src="https://capsule-render.vercel.app/api?type=waving&color=0:0f0c29,50:302b63,100:24243e&height=180&section=header&text=NexaSense%20AI&fontSize=72&fontColor=ffffff&fontAlignY=35&desc=Premium%20Enterprise%20RAG%20Platform%20%E2%80%94%20V4.0%20Live%20on%20AWS&descAlignY=62&descSize=19&animation=twinkling" width="100%"/>
 
 [![CI/CD](https://img.shields.io/badge/CI%2FCD-GitHub%20Actions-2088FF?style=flat-square&logo=githubactions&logoColor=white)](https://github.com/rajakumar123-commit/nexasense-ai-assistant/actions)
 [![Live](https://img.shields.io/badge/🌐%20Live-rajakumar--nexasense--ai.online-brightgreen?style=for-the-badge)](https://rajakumar-nexasense-ai.online)
@@ -19,9 +19,9 @@
 
 **Upload any PDF. Ask anything. Get precise, source-cited answers in seconds.**
 
-NexaSense is a **production-deployed SaaS platform** built on a 10-step advanced RAG pipeline  
-with dual-LLM orchestration, hybrid vector + full-text retrieval, a Redis semantic cache,  
-Razorpay credit billing, CI/CD automation, and HTTPS on a real custom domain.
+NexaSense is a **production-deployed Premium AI SaaS** built on a 10-step advanced RAG pipeline  
+with dual-LLM orchestration, global multi-document retrieval, a Redis semantic cache,  
+Razorpay credit billing, CI/CD automation, and a stunning Glassmorphism UI.
 
 <br/>
 
@@ -37,16 +37,16 @@ Razorpay credit billing, CI/CD automation, and HTTPS on a real custom domain.
 >
 > | What | How |
 > |---|---|
-> | **AI Engine** | 10-step RAG pipeline — dual LLM (Groq Llama-3.3-70B + Gemini 1.5 Pro) |
-> | **Hybrid RAG** | Document-first retrieval + seamless world-knowledge fallback |
+> | **AI Engine** | 10-step Reranked RAG — dual LLM (Groq + Gemini 1.5 Pro) |
+> | **Global RAG** | **Global Multi-Doc Search**: Query your entire library simultaneously |
+> | **Multi-Lingual**| **Cross-Lingual Support**: Ask in Hindi/Marathi/etc. & get cited answers |
+> | **Notifications**| **Gmail Integration**: Automated welcome & system notifications |
+> | **Elite UI/UX** | **Glassmorphism Design System**: Backdrop-blur effects & ambient orbs |
+> | **Animations** | **Framer Motion Layouts**: Staggered entry & layout physics |
+> | **3D Pipeline** | **Three.js WebGL Visualization**: Fixed responsive 3D stage logic |
+> | **Stability** | **UUID Exhaustive Sanitization**: Postgres-safe 'all' document routing |
+> | **Performance** | **Parallel Context Retrieval**: Ultra-fast multi-doc concurrent lookup |
 > | **Voice AI** | Browser-native Speech-to-Text (Mic) + Text-to-Speech (Speaker) |
-> | **Memory** | Persistent Session History — UUID mapping & PostgreSQL JSON aggregation |
-> | **Performance** | 2-layer cache (LRU + Redis semantic vector) — cache hit = 0 LLM calls |
-> | **Ingestion** | Multi-format (.pdf, .docx, .txt), Async BullMQ worker, ONNX embeddings |
-> | **Billing** | Razorpay — atomic `SELECT FOR UPDATE` credit system |
-> | **Infrastructure** | AWS EC2 + Docker Compose + Caddy HTTPS + GitHub Actions CI/CD |
-> | **Auth** | JWT (15m) + persisted refresh tokens + RBAC (User/Admin) |
-> | **Scale** | PostgreSQL FTS + ChromaDB vectors + Redis queue — all containerized |
 
 ---
 
@@ -216,7 +216,12 @@ graph TD
 
     BE -->|"Enqueue job"| Redis["Redis :6379\nBullMQ queue\nSemantic cache"]
     BE -->|"SQL + FTS"| PG[("PostgreSQL :5432\npgvector · chunks\nusers · transactions")]
-    BE -->|"Vector search"| Chroma[("ChromaDB :8000\nDense embeddings")]
+    
+    subgraph "Vector Core"
+        BE -->|"Single Doc Lookup"| Chroma[("ChromaDB :8000\nDense embeddings")]
+        BE -->|"Parallel Multi-Doc search"| Chroma
+    end
+
     BE -->|"Groq API"| Groq["☁️ Groq\nLlama-3.3-70B\nSpeed layer"]
     BE -->|"Gemini API"| Gemini["☁️ Gemini 1.5 Pro\nReasoning layer"]
 
@@ -250,8 +255,8 @@ flowchart TD
     D -- MISS --> E["Load conversation history\nfrom PostgreSQL"]
     E --> F["Step 2 · Groq — 1 API call\nSpell-fix · standalone rewrite\nCross-lingual translation · 3× expansion · HyDE doc"]
 
-    F --> G["Step 3 · ChromaDB search\ncosine · HyDE + all expanded\nPromise.all parallel"]
-    F --> H["Step 4 · PostgreSQL FTS\nto_tsvector · all variants\nSkipped in multi-doc mode"]
+    F --> G["Step 3 · Vector Retrieval\nParallel Multi-Doc search\nChromaDB cosine"]
+    F --> H["Step 4 · PostgreSQL FTS\nto_tsvector · all variants\nSanitized UUID logic"]
 
     G --> I["Step 5 · Merge + Deduplicate\ncap at 20 chunks"]
     H --> I
@@ -265,9 +270,9 @@ flowchart TD
     K -- "Yes" --> M["Step 7 · Context Compression\nGroq strips boilerplate"]
     M --> N["Step 8 · Answer Generation\nGroq Llama-3.3-70B + Native Language Override"]
     N --> O["Step 9 · Gemini Reasoning\nLogical refinement + validation"]
-    O --> P["Self-reflection\nGemini confidence 0-100%"]
+    O --> P["Gemini Self-reflection\nGrounding / Anti-Hallucination\nConfidence 0-100%"]
     P --> Q["Step 10 · Finalize\nSave to conversation\nCache in LRU + Redis\nRecord query metrics"]
-    Q --> OUT(["Return answer + sources + confidence"])
+    Q --> OUT(["Return answer + sources + confidence badge"])
 ```
 
 [↑ Back to Top](#-table-of-contents)
@@ -331,34 +336,59 @@ sequenceDiagram
 ## 7. ✨ Feature Reference
 
 <details open>
-<summary><strong>🧠 AI & RAG</strong></summary>
+<summary><strong>💎 Premium Enterprise UI/UX (v4.0)</strong></summary>
 <br/>
 
 | Feature | Detail |
 |---|---|
-| **10-Step RAG Pipeline** | Normalize → dual-cache → Groq pre-process+HyDE → parallel hybrid search → rerank → compress → generate → Gemini refine → reflect → cache |
-| **HyDE** | Hypothetical Document Embeddings — generated inside the Groq Step 2 call (same request as query rewriting — 0 extra API calls) |
-| **Hybrid Search** | ChromaDB cosine + PostgreSQL `to_tsvector` run in parallel via `Promise.all`; keyword search skipped in multi-doc (userId) mode |
-| **Semantic Reranker** | All retrieved chunks re-scored; only top-7 passed to LLM |
-| **Gemini Self-Reflection** | Gemini scores confidence (0–100%) against source chunks after generation |
-| **Gemini Context Fallback** | When retrieval returns 0 chunks, Gemini attempts to answer from domain context — no hallucination |
-| **Multi-Document Mode** | Query across all user documents simultaneously via userId-scoped vector search |
-| **Conversational Memory** | Full conversation history stored in PostgreSQL; Groq rewrites each query as context-aware standalone |
-| **Hybrid Knowledge Fallback** | Seamlessly answers out-of-domain questions using world knowledge with a transparent disclaimer |
+| **Glassmorphism Design** | High-end visual system using `backdrop-blur` and semi-transparent surfaces. |
+| **Ambient Background Orbs** | Slow-drifting, highly blurred gradient mesh orbs creating a deep, dynamic moving environment. |
+| **Framer Motion Layouts** | Staggered entry animations, layout transitions, and physically-modeled interactions. |
+| **Global Multi-Doc Chat** | Dedicated "Chat With All" master context toggle in the Workspace UI. |
+| **Responsive 3D Pipeline** | Overhauled Three.js stage with `ResizeObserver` for perfect mobile/tablet scaling. |
+| **UUID Stability Layer** | Exhaustive backend sanitization that prevents database crashes during global searches. |
 
 </details>
 
 <details open>
-<summary><strong>🎙️ Voice AI & Multilingual Engine (v3.0)</strong></summary>
+<summary><strong>🧠 AI & RAG Engineering</strong></summary>
+<br/>
+
+| Feature | Detail |
+|---|---|
+| **10-Step RERanked RAG** | Normalize → dual-cache → Groq HyDE → parallel vector search → rerank → generate → Gemini reasoning → reflect. |
+| **Global Context Search** | High-performance `Promise.all` parallelization across the entire user document library. |
+| **HyDE (Hypothetical Doc)** | Generated inside the Groq Step 2 call to align semantic search with LLM expectations. |
+| **Semantic Reranker** | Chunks are re-scored by relevance before being passed to the synthesis layer. |
+| **Gemini Reasoning Pass** | Gemini 1.5 Pro performs a logical validation pass to prevent hallucinations. |
+| **Self-Reflection Confidence** | AI provides a 0-100% confidence score based on grounding in the source documents. |
+| **Hybrid Knowledge** | Seamlessly blends document facts with general AI world-knowledge when sources are missing. |
+
+</details>
+
+<details open>
+<summary><strong>🎙️ Voice AI & Multilingual Engine (v4.0)</strong></summary>
 <br/>
 
 | Feature | Detail |
 |---|---|
 | **Voice Input (STT)** | Animated microphone button uses browser-native `SpeechRecognition` to instantly transcribe speech. |
 | **Voice Output (TTS)** | Smart speaker button reads AI generations aloud via `speechSynthesis`. |
-| **Cross-Lingual RAG** | AI translates non-English user queries to English for precise vector retrieval. |
-| **Native Language Gen** | AI replies strictly in the user's detected input language, bypassing english source biases. |
-| **User Language Override** | Explicit instructions (e.g. "answer in Marathi") securely override the language auto-detect rule. |
+| **Global Multi-Language** | AI natively detects and responds in **Hindi, Marathi, Bengali, Spanish, etc.** |
+| **Cross-Lingual RAG** | Translates non-English queries to English for precise vector search, then replies in native tongue. |
+| **Language Override** | System instructions ensure the AI maintains the user's preferred language throughout the session. |
+
+</details>
+
+<details>
+<summary><strong>📧 Notifications & Communications</strong></summary>
+<br/>
+
+| Feature | Detail |
+|---|---|
+| **Gmail SMTP** | Enterprise-grade email delivery using Nodemailer and Google SMTP relay. |
+| **Welcome Emails** | Beautifully formatted HTML welcome emails sent automatically upon user registration. |
+| **System Alerts** | Automated notifications for credit refills and payment confirmations. |
 
 </details>
 
