@@ -43,7 +43,7 @@ services:
 
   # ── ChromaDB ──────────────────────────────────────────────
   chroma:
-    image: chromadb/chroma:latest
+    image: chromadb/chroma:0.6.3
     container_name: nexasense-chroma
     restart: always
     ports:
