@@ -1,82 +1,152 @@
-// FIX: overlap now actually works — each chunk shares 'overlap' chars with next chunk
+// ============================================================
+// recursiveChunk.js
+// NexaSense AI Assistant
+// Production-Grade Recursive Text Chunking (Optimized)
+// ============================================================
+
 function recursiveChunk(text, chunkSize = 1200, overlap = 200) {
 
-  // Guard: return empty array for empty input
-  if (!text || text.trim().length === 0) return [];
+  // ----------------------------------------------------------
+  // GUARDS
+  // ----------------------------------------------------------
+  if (!text || typeof text !== "string") return [];
+
+  text = text.trim();
+  if (text.length === 0) return [];
+
+  // Prevent invalid overlap
+  overlap = Math.max(0, Math.min(overlap, Math.floor(chunkSize / 2)));
 
   const separators = ["\n\n", "\n", ". ", " "];
   const rawChunks = [];
 
+
+  // ----------------------------------------------------------
+  // RECURSIVE SPLITTING (semantic-first)
+  // ----------------------------------------------------------
   function splitRecursively(segment, separatorIndex = 0) {
-    // Base case: segment fits in one chunk
+
+    if (!segment || segment.trim().length === 0) return;
+
+    // Base case
     if (segment.length <= chunkSize) {
-      const trimmed = segment.trim();
-      if (trimmed.length > 0) rawChunks.push(trimmed);   // FIX: skip empty chunks
+      rawChunks.push(segment.trim());
       return;
     }
 
-    // Hard split fallback: no separator worked
+    // No separators left → hard split
     if (separatorIndex >= separators.length) {
-      for (let i = 0; i < segment.length; i += chunkSize - overlap) {
+
+      for (let i = 0; i < segment.length; i += (chunkSize - overlap)) {
+
         const piece = segment.slice(i, i + chunkSize).trim();
-        if (piece.length > 0) rawChunks.push(piece);
+
+        if (piece.length > 0) {
+          rawChunks.push(piece);
+        }
+
       }
+
       return;
     }
 
     const separator = separators[separatorIndex];
-    const pieces = segment.split(separator);
+    const parts = segment.split(separator);
 
-    // If separator not found in this segment, try next separator
-    if (pieces.length === 1) {
+    // If separator not found → go deeper
+    if (parts.length === 1) {
       splitRecursively(segment, separatorIndex + 1);
       return;
     }
 
-    let currentChunk = "";
+    let current = "";
 
-    for (const piece of pieces) {
-      const candidate = currentChunk
-        ? currentChunk + separator + piece
-        : piece;
+    for (const part of parts) {
+
+      const candidate = current
+        ? current + separator + part
+        : part;
 
       if (candidate.length > chunkSize) {
-        // Save current chunk
-        if (currentChunk.trim().length > 0) {
-          rawChunks.push(currentChunk.trim());
+
+        if (current.trim().length > 0) {
+          rawChunks.push(current.trim());
         }
-        // If single piece is too big, recurse with next separator
-        if (piece.length > chunkSize) {
-          splitRecursively(piece, separatorIndex + 1);
-          currentChunk = "";
+
+        if (part.length > chunkSize) {
+          splitRecursively(part, separatorIndex + 1);
+          current = "";
         } else {
-          currentChunk = piece;
+          current = part;
         }
+
       } else {
-        currentChunk = candidate;
+        current = candidate;
       }
+
     }
 
-    if (currentChunk.trim().length > 0) {
-      rawChunks.push(currentChunk.trim());
+    if (current.trim().length > 0) {
+      rawChunks.push(current.trim());
     }
+
   }
 
   splitRecursively(text);
 
-  // FIX: Apply overlap sliding window AFTER chunking
-  // Each chunk now starts 'overlap' chars before the previous chunk ended
-  if (overlap === 0 || rawChunks.length <= 1) return rawChunks;
+
+  // ----------------------------------------------------------
+  // APPLY OVERLAP (sliding window)
+  // ----------------------------------------------------------
+  if (overlap === 0 || rawChunks.length <= 1) {
+    return dedupe(rawChunks);
+  }
 
   const overlappedChunks = [rawChunks[0]];
 
   for (let i = 1; i < rawChunks.length; i++) {
-    const prevChunk = rawChunks[i - 1];
-    const overlapText = prevChunk.slice(-overlap);     // last N chars of previous chunk
-    overlappedChunks.push(overlapText + " " + rawChunks[i]);
+
+    const prev = rawChunks[i - 1];
+
+    const overlapText =
+      prev.length > overlap
+        ? prev.slice(-overlap)
+        : prev;
+
+    const merged = (overlapText + " " + rawChunks[i]).trim();
+
+    overlappedChunks.push(merged);
+
   }
 
-  return overlappedChunks;
+
+  // ----------------------------------------------------------
+  // FINAL CLEANUP
+  // ----------------------------------------------------------
+  return dedupe(overlappedChunks);
+
 }
+
+
+// ----------------------------------------------------------
+// DEDUPE (important for overlap)
+// ----------------------------------------------------------
+function dedupe(arr = []) {
+
+  const seen = new Set();
+
+  return arr.filter(chunk => {
+
+    const key = chunk.slice(0, 200);
+
+    if (!key || seen.has(key)) return false;
+
+    seen.add(key);
+    return true;
+
+  });
+
+}
+
 
 module.exports = recursiveChunk;
