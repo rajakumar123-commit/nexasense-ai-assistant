@@ -42,7 +42,8 @@ services:
     image: redis:7-alpine
     container_name: nexasense-redis
     restart: always
-    command: redis-server --maxmemory 256mb --maxmemory-policy allkeys-lru
+    # ✅ HARDENED: Use 'noeviction' for BullMQ reliability (prevents job data loss)
+    command: redis-server --maxmemory 256mb --maxmemory-policy noeviction
     networks:
       - data-tier
     volumes:
@@ -101,6 +102,10 @@ services:
     container_name: nexasense-worker
     restart: always
     init: true # ✅ CRITICAL: Reaps zombie Chrome processes
+    # ✅ FIXED: Explicit DNS for AWS/Docker network reliability
+    dns:
+      - 8.8.8.8
+      - 1.1.1.1
     depends_on:
       postgres: { condition: service_healthy }
       redis: { condition: service_healthy }
