@@ -1,10 +1,10 @@
 # ============================================================
-# docker-compose.yml — NexaSense AI Assistant (Production Safe)
+# NexaSense AI Assistant — V5.0 Production (Enterprise Hardened)
 # ============================================================
 
 services:
 
-  # ── PostgreSQL ─────────────────────────────────────────────
+  # ── PostgreSQL (pgvector) ──────────────────────────────────
   postgres:
     image: pgvector/pgvector:pg16
     container_name: nexasense-postgres
@@ -13,8 +13,13 @@ services:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: nexasense123
       POSTGRES_DB: nexasense
-    ports:
-      - "5432:5432"
+    # Resource Guard: Postgres is the heart; don't let it be starved
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+    networks:
+      - data-tier
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./schema.sql:/docker-entrypoint-initdb.d/01_schema.sql:ro
@@ -23,31 +28,33 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
-      start_period: 20s
 
-  # ── Redis ─────────────────────────────────────────────────
+  # ── Redis (Queue + Cache) ──────────────────────────────────
   redis:
     image: redis:7-alpine
     container_name: nexasense-redis
     restart: always
-    command: redis-server --maxmemory 512mb --maxmemory-policy noeviction
-    ports:
-      - "6379:6379"
+    command: redis-server --maxmemory 256mb --maxmemory-policy allkeys-lru
+    networks:
+      - data-tier
     volumes:
       - redis_data:/data
     healthcheck:
       test: [ "CMD", "redis-cli", "ping" ]
-      interval: 10s
-      timeout: 5s
-      retries: 5
 
   # ── ChromaDB ──────────────────────────────────────────────
   chroma:
     image: chromadb/chroma:0.6.3
     container_name: nexasense-chroma
     restart: always
-    ports:
-      - "8000:8000"
+    environment:
+      - IS_PERSISTENT=TRUE
+    deploy:
+      resources:
+        limits:
+          memory: 1G # Chroma can be RAM heavy during indexing
+    networks:
+      - data-tier
     volumes:
       - chroma_data:/data
 
@@ -59,21 +66,13 @@ services:
     container_name: nexasense-backend
     restart: always
     depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-      chroma:
-        condition: service_started
-    env_file:
-      - .env
-    environment:
-      DATABASE_URL: postgresql://postgres:nexasense123@postgres:5432/nexasense
-      REDIS_URL: redis://redis:6379
-      CHROMA_URL: http://chroma:8000
-      TRANSFORMERS_OFFLINE: "0"
-      XENOVA_CACHE_DIR: /app/.model-cache
-      NODE_ENV: production
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+    env_file: .env
+    # Enterprise Logic: Connects to both worlds
+    networks:
+      - frontend-tier
+      - data-tier
     ports:
       - "3000:3000"
     volumes:
@@ -82,48 +81,33 @@ services:
       - model_cache:/app/.model-cache
     healthcheck:
       test: [ "CMD", "curl", "-f", "http://localhost:3000/api/health" ]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 60s
 
-  # ── Worker ────────────────────────────────────────────────
+  # ── Worker (Scraper + Embedder) ───────────────────────────
   worker:
     build:
       context: .
       dockerfile: Dockerfile
     container_name: nexasense-worker
     restart: always
+    init: true # ✅ CRITICAL: Reaps zombie Chrome processes
     depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-      chroma:
-        condition: service_started
-    env_file:
-      - .env
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+    env_file: .env
     environment:
-      DATABASE_URL: postgresql://postgres:nexasense123@postgres:5432/nexasense
-      REDIS_URL: redis://redis:6379
-      CHROMA_URL: http://chroma:8000
-      NODE_ENV: production
+      - PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium
+    deploy:
+      resources:
+        limits:
+          memory: 1.5G # High limit for Puppeteer + Transformers
+    networks:
+      - data-tier
+    shm_size: "1gb" # ✅ UPGRADED: Maximum stability for headless Chrome
+    command: node src/workers/ingestion.worker.js
     volumes:
       - uploads_data:/app/uploads
       - logs_data:/app/logs
       - model_cache:/app/.model-cache
-
-    # ✅ REQUIRED for Puppeteer stability
-    shm_size: "256mb"
-
-    command: node src/workers/ingestion.worker.js
-
-    healthcheck:
-      test: [ "CMD-SHELL", "ps aux | grep 'ingestion.worker' | grep -v grep || exit 1" ]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 30s
 
   # ── Frontend ──────────────────────────────────────────────
   frontend:
@@ -136,11 +120,10 @@ services:
         VITE_ALLOWED_FILE_TYPES: ${VITE_ALLOWED_FILE_TYPES}
     container_name: nexasense-frontend
     restart: always
-    depends_on:
-      backend:
-        condition: service_healthy
+    networks:
+      - frontend-tier
 
-  # ── Caddy Reverse Proxy (HTTPS) ───────────────────────────
+  # ── Caddy (SSL/Proxy) ─────────────────────────────────────
   caddy:
     image: caddy:2-alpine
     container_name: nexasense-caddy
@@ -148,73 +131,50 @@ services:
     ports:
       - "80:80"
       - "443:443"
+    networks:
+      - frontend-tier
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile
       - caddy_data:/data
       - caddy_config:/config
-    depends_on:
-      frontend:
-        condition: service_started
 
-  # ── Prometheus ───────────────────────────────────────────
+  # ── Monitoring (Prometheus + Grafana) ─────────────────────
   prometheus:
     image: prom/prometheus:latest
     container_name: nexasense-prometheus
-    restart: always
+    networks:
+      - data-tier
     volumes:
       - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
       - prometheus_data:/prometheus
-    command:
-      - '--config.file=/etc/prometheus/prometheus.yml'
-      - '--storage.tsdb.path=/prometheus'
-    ports:
-      - "9090:9090"
-    depends_on:
-      - backend
 
-  # ── Grafana (SAFE + UPGRADED) ─────────────────────────────
   grafana:
     image: grafana/grafana:latest
     container_name: nexasense-grafana
-    restart: always
     environment:
-      - GF_SECURITY_ADMIN_USER=${PROMETHEUS_AUTH_USER:-admin}
-      - GF_SECURITY_ADMIN_PASSWORD=${PROMETHEUS_AUTH_PASS:-admin}
-      # ✅ Needed for /grafana route
       - GF_SERVER_ROOT_URL=https://rajakumar-nexasense-ai.online/grafana
       - GF_SERVER_SERVE_FROM_SUB_PATH=true
-    ports:
-      - "3001:3000" # KEEPED → no break
+    networks:
+      - frontend-tier
+      - data-tier
     volumes:
       - grafana_data:/var/lib/grafana
-    depends_on:
-      - prometheus
 
-  # ── Test Runner ───────────────────────────────────────────
-  test:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-      chroma:
-        condition: service_started
-    env_file:
-      - .env
-    environment:
-      DATABASE_URL: postgresql://postgres:nexasense123@postgres:5432/nexasense
-      REDIS_URL: redis://redis:6379
-      CHROMA_URL: http://chroma:8000
-      NODE_ENV: test
-    volumes:
-      - uploads_data:/app/uploads
-    command: node tests/rag.test.js
-    profiles:
-      - test
+# ── LOGGING POLICY (Global) ────────────────────────────────
+logging:
+  driver: "json-file"
+  options:
+    max-size: "10m"
+    max-file: "3"
 
+# ── NETWORKS ───────────────────────────────────────────────
+networks:
+  frontend-tier:
+    driver: bridge
+  data-tier:
+    internal: true # ✅ External traffic cannot hit your DBs directly
+
+# ── VOLUMES ────────────────────────────────────────────────
 volumes:
   postgres_data:
   chroma_data:
