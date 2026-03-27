@@ -23,10 +23,7 @@ rajakumar-nexasense-ai.online {
     # -------------------------------
     # Grafana (Secure via HTTPS)
     # -------------------------------
-    # Note: GF_SERVER_SERVE_FROM_SUB_PATH is true
-    route /grafana* {
-        reverse_proxy grafana:3000
-    }
+    reverse_proxy /grafana* grafana:3000
 
     # -------------------------------
     # Frontend (React App)
