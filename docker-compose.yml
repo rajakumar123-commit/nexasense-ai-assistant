@@ -2,6 +2,13 @@
 # NexaSense AI Assistant — V5.0 Production (Enterprise Hardened)
 # ============================================================
 
+# ── LOGGING POLICY (Shared Anchor) ─────────────────────────
+x-logging: &default-logging
+  driver: "json-file"
+  options:
+    max-size: "10m"
+    max-file: "3"
+
 services:
 
   # ── PostgreSQL (pgvector) ──────────────────────────────────
@@ -112,6 +119,7 @@ services:
       - uploads_data:/app/uploads
       - logs_data:/app/logs
       - model_cache:/app/.model-cache
+    logging: *default-logging
 
   # ── Frontend ──────────────────────────────────────────────
   frontend:
@@ -126,6 +134,7 @@ services:
     restart: always
     networks:
       - frontend-tier
+    logging: *default-logging
 
   # ── Caddy (SSL/Proxy) ─────────────────────────────────────
   caddy:
@@ -160,6 +169,33 @@ services:
     environment:
       - GF_SERVER_ROOT_URL=https://rajakumar-nexasense-ai.online/grafana
       - GF_SERVER_SERVE_FROM_SUB_PATH=true
+    networks:
+      - frontend-tier
+      - data-tier
+    volumes:
+      - grafana_data:/var/lib/grafana
+    logging: *default-logging
+
+# ── NETWORKS ───────────────────────────────────────────────
+networks:
+  frontend-tier:
+    driver: bridge
+  data-tier:
+    internal: true # ✅ External traffic cannot hit your DBs directly
+
+# ── VOLUMES ────────────────────────────────────────────────
+volumes:
+  postgres_data:
+  chroma_data:
+  redis_data:
+  logs_data:
+  model_cache:
+  uploads_data:
+  caddy_data:
+  caddy_config:
+  prometheus_data:
+  grafana_data:
+F_SERVER_SERVE_FROM_SUB_PATH=true
     networks:
       - frontend-tier
       - data-tier
