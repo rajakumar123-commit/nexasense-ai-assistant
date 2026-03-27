@@ -1,6 +1,6 @@
 // ============================================================
 // app.js
-// NexaSense AI Assistant v2.1
+// NexaSense AI Assistant v4.2 (Ultimate)
 // Production-ready Express server
 // ============================================================
 
@@ -147,8 +147,8 @@ app.get("/", (req, res) => {
   res.json({
     status: "ok",
     service: "NexaSense API",
-    version: "2.1.0",
-    message: "RAG AI assistant server running",
+    version: "4.2.0",
+    message: "NexaSense V4.2 Ultimate — Production Ready",
   });
 });
 

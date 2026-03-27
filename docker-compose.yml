@@ -133,6 +133,7 @@ services:
       args:
         VITE_RAZORPAY_KEY_ID: ${VITE_RAZORPAY_KEY_ID}
         VITE_API_URL: ${VITE_API_URL}
+        VITE_ALLOWED_FILE_TYPES: ${VITE_ALLOWED_FILE_TYPES}
     container_name: nexasense-frontend
     restart: always
     depends_on:
@@ -182,7 +183,7 @@ services:
       - GF_SERVER_ROOT_URL=https://rajakumar-nexasense-ai.online/grafana
       - GF_SERVER_SERVE_FROM_SUB_PATH=true
     ports:
-      - "3001:3000"   # KEEPED → no break
+      - "3001:3000" # KEEPED → no break
     volumes:
       - grafana_data:/var/lib/grafana
     depends_on:

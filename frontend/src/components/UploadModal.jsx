@@ -7,11 +7,17 @@ import { motion, AnimatePresence } from "framer-motion";
 import useApi from "../hooks/useApi";
 
 
-const ALLOWED_TYPES = [
-  "application/pdf",
-  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-  "text/plain"
-];
+const DEFAULT_ALLOWED = ".pdf,.docx,.txt";
+const ALLOWED_EXTS  = import.meta.env.VITE_ALLOWED_FILE_TYPES || DEFAULT_ALLOWED;
+
+// Map extensions to mime types for drag-and-drop validation
+const MIME_MAP = {
+  ".pdf":  "application/pdf",
+  ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  ".txt":  "text/plain"
+};
+
+const ALLOWED_MIMES = ALLOWED_EXTS.split(",").map(ext => MIME_MAP[ext.trim()]).filter(Boolean);
 
 function UploadModal({ isOpen, onClose, onUploadSuccess, onUploadError, initialFile }) {
   const api = useApi();
@@ -40,14 +46,14 @@ function UploadModal({ isOpen, onClose, onUploadSuccess, onUploadError, initialF
   const handleDrop = (e) => {
     e.preventDefault(); setDragging(false);
     const f = e.dataTransfer.files[0];
-    if (f && ALLOWED_TYPES.includes(f.type)) { setFile(f); setError(""); }
-    else setError("Only PDF, DOCX, and TXT files are supported.");
+    if (f && ALLOWED_MIMES.includes(f.type)) { setFile(f); setError(""); }
+    else setError(`Only ${ALLOWED_EXTS.toUpperCase().replace(/\./g, "")} files are supported.`);
   };
 
   const handleUpload = async () => {
     if (mode === "file") {
       if (!file) { setError("Please select a file."); return; }
-      if (!ALLOWED_TYPES.includes(file.type)) { setError("Only PDF, DOCX, and TXT files are supported."); return; }
+      if (!ALLOWED_MIMES.includes(file.type)) { setError(`Only ${ALLOWED_EXTS.toUpperCase().replace(/\./g, "")} files are supported.`); return; }
     } else {
       if (!url || !url.startsWith("http")) { setError("Please enter a valid URL (starting with http/https)."); return; }
     }
@@ -143,9 +149,9 @@ function UploadModal({ isOpen, onClose, onUploadSuccess, onUploadError, initialF
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                     </svg>
                     <p className="text-sm font-medium text-slate-300">Drag document here or click to browse</p>
-                    <p className="text-xs text-slate-500">PDF, DOCX, or TXT format</p>
+                    <p className="text-xs text-slate-500">{ALLOWED_EXTS.toUpperCase().replace(/\./g, "").replace(/,/g, ", ")} format</p>
                   </div>
-                  <input ref={inputRef} type="file" accept=".pdf,.docx,.txt" className="hidden" onChange={handleFileChange} />
+                  <input ref={inputRef} type="file" accept={ALLOWED_EXTS} className="hidden" onChange={handleFileChange} />
                 </div>
               ) : (
                 <div className="flex items-center gap-3 bg-slate-800/60 border border-slate-700/50 rounded-xl px-4 py-3">
