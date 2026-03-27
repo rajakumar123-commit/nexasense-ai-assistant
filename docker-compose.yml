@@ -1,5 +1,5 @@
 # ============================================================
-# docker-compose.yml — NexaSense AI Assistant
+# docker-compose.yml — NexaSense AI Assistant (Production Safe)
 # ============================================================
 
 services:
@@ -112,14 +112,12 @@ services:
       - uploads_data:/app/uploads
       - logs_data:/app/logs
       - model_cache:/app/.model-cache
-    # ──────────────────────────────────────────────────────
-    # PUPPETEER KE LIYE ZAROORI
-    # Default Docker /dev/shm = 64MB — Chromium crash karta hai
-    # shm_size badha ke 256MB karo
-    # ──────────────────────────────────────────────────────
+
+    # ✅ REQUIRED for Puppeteer stability
     shm_size: "256mb"
+
     command: node src/workers/ingestion.worker.js
-    # Worker healthcheck — detects silent crashes
+
     healthcheck:
       test: [ "CMD-SHELL", "ps aux | grep 'ingestion.worker' | grep -v grep || exit 1" ]
       interval: 30s
@@ -127,13 +125,12 @@ services:
       retries: 3
       start_period: 30s
 
-  # ── Frontend (FIXED) ──────────────────────────────────────
+  # ── Frontend ──────────────────────────────────────────────
   frontend:
     build:
       context: ./frontend
       dockerfile: Dockerfile
       args:
-        # Read from root .env
         VITE_RAZORPAY_KEY_ID: ${VITE_RAZORPAY_KEY_ID}
         VITE_API_URL: ${VITE_API_URL}
     container_name: nexasense-frontend
@@ -169,28 +166,29 @@ services:
     command:
       - '--config.file=/etc/prometheus/prometheus.yml'
       - '--storage.tsdb.path=/prometheus'
-      - '--web.console.libraries=/usr/share/prometheus/console_libraries'
-      - '--web.console.templates=/usr/share/prometheus/consoles'
     ports:
       - "9090:9090"
     depends_on:
       - backend
 
-  # ── Grafana ──────────────────────────────────────────────
+  # ── Grafana (SAFE + UPGRADED) ─────────────────────────────
   grafana:
     image: grafana/grafana:latest
     container_name: nexasense-grafana
     restart: always
     environment:
       - GF_SECURITY_ADMIN_PASSWORD=admin
+      # ✅ Needed for /grafana route
+      - GF_SERVER_ROOT_URL=https://rajakumar-nexasense-ai.online/grafana
+      - GF_SERVER_SERVE_FROM_SUB_PATH=true
     ports:
-      - "3001:3000"
+      - "3001:3000"   # KEEPED → no break
     volumes:
       - grafana_data:/var/lib/grafana
     depends_on:
       - prometheus
 
-  # ── Test Runner ────────────────────────────────────────────
+  # ── Test Runner ───────────────────────────────────────────
   test:
     build:
       context: .

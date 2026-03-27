@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="https://capsule-render.vercel.app/api?type=waving&color=0:0f0c29,50:302b63,100:24243e&height=180&section=header&text=NexaSense%20AI&fontSize=72&fontColor=ffffff&fontAlignY=35&desc=Premium%20Enterprise%20RAG%20Platform%20%E2%80%94%20V4.0%20Live%20on%20AWS&descAlignY=62&descSize=19&animation=twinkling" width="100%"/>
+<img src="https://capsule-render.vercel.app/api?type=waving&color=0:0f0c29,50:302b63,100:24243e&height=180&section=header&text=NexaSense%20AI&fontSize=72&fontColor=ffffff&fontAlignY=35&desc=Premium%20Enterprise%20RAG%20Platform%20%E2%80%94%20V4.2%20%22Ultimate%22%20Stable&descAlignY=62&descSize=19&animation=twinkling" width="100%"/>
 
 [![CI/CD](https://img.shields.io/badge/CI%2FCD-GitHub%20Actions-2088FF?style=flat-square&logo=githubactions&logoColor=white)](https://github.com/rajakumar123-commit/nexasense-ai-assistant/actions)
 [![Live](https://img.shields.io/badge/🌐%20Live-rajakumar--nexasense--ai.online-brightgreen?style=for-the-badge)](https://rajakumar-nexasense-ai.online)
@@ -153,7 +153,9 @@ NexaSense is a full-stack **AI Document Intelligence** SaaS. Users register, upl
 
 | | URL |
 |---|---|
-| **Production** | [https://rajakumar-nexasense-ai.online](https://rajakumar-nexasense-ai.online) |
+| **Production App** | [https://rajakumar-nexasense-ai.online](https://rajakumar-nexasense-ai.online) |
+| **Telemetry (Metrics)**| [https://rajakumar-nexasense-ai.online/api/metrics](https://rajakumar-nexasense-ai.online/api/metrics) |
+| **Visual Dashboard**| [https://rajakumar-nexasense-ai.online:3001](https://rajakumar-nexasense-ai.online:3001) |
 | **API Base** | `https://rajakumar-nexasense-ai.online/api` |
 | **Health Check** | `https://rajakumar-nexasense-ai.online/api/health` |
 
@@ -367,9 +369,9 @@ sequenceDiagram
 
 | Feature | Detail |
 |---|---|
-| **Live URL Indexing** | Scrape main content from any URL using `axios` + `cheerio` (removes nav/ads/scripts). |
+| **Tiered Scraper (V4.2)**| **Smart Browser Fallback**: Fast Axios extraction for static sites + **Puppeteer (Chromium)** for JS-heavy sites. |
 | **Prometheus Metrics** | Full instrumentation of query latency, token usage, and ingestion throughput. |
-| **Grafana Dashboards** | Professional visualization of system health and AI performance metrics. |
+| **Grafana Dashboards** | Professional visualization of system health and AI performance metrics at port `3001`. |
 | **Razorpay Webhooks** | 100% automated credit refills via secure, signature-validated asynchronous events. |
 | **HMAC Signature Check**| Zero-trust payment verification using raw-body buffer validation. |
 | **Atomic Transactions** | `SELECT FOR UPDATE` ensures financial data integrity during credit reconciliation. |

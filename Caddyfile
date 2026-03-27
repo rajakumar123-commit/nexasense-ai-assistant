@@ -1,4 +1,37 @@
 rajakumar-nexasense-ai.online {
-    reverse_proxy /api/* backend:3000
-    reverse_proxy /* frontend:80
+
+    # -------------------------------
+    # Performance
+    # -------------------------------
+    encode gzip
+
+    # -------------------------------
+    # API (Express expects /api prefix)
+    # -------------------------------
+    handle /api/* {
+        reverse_proxy backend:3000
+    }
+
+    # -------------------------------
+    # Metrics (Alias /metrics to /api/metrics)
+    # -------------------------------
+    handle /metrics {
+        rewrite * /api/metrics
+        reverse_proxy backend:3000
+    }
+
+    # -------------------------------
+    # Grafana (Secure via HTTPS)
+    # -------------------------------
+    # Note: GF_SERVER_SERVE_FROM_SUB_PATH is true
+    handle /grafana/* {
+        reverse_proxy grafana:3000
+    }
+
+    # -------------------------------
+    # Frontend (React App)
+    # -------------------------------
+    handle {
+        reverse_proxy frontend:80
+    }
 }
