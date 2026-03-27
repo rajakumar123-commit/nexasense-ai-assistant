@@ -1,8 +1,7 @@
 # ============================================================
-# NexaSense AI Assistant — V5.0 Production (Enterprise Hardened)
+# NexaSense AI Assistant — V5.0 Ultimate (Enterprise Hardened)
 # ============================================================
 
-# ── LOGGING POLICY (Shared Anchor) ─────────────────────────
 x-logging: &default-logging
   driver: "json-file"
   options:
@@ -20,7 +19,6 @@ services:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: nexasense123
       POSTGRES_DB: nexasense
-    # Resource Guard: Postgres is the heart; don't let it be starved
     deploy:
       resources:
         limits:
@@ -42,7 +40,6 @@ services:
     image: redis:7-alpine
     container_name: nexasense-redis
     restart: always
-    # ✅ HARDENED: Use 'noeviction' for BullMQ reliability (prevents job data loss)
     command: redis-server --maxmemory 256mb --maxmemory-policy noeviction
     networks:
       - data-tier
@@ -62,7 +59,7 @@ services:
     deploy:
       resources:
         limits:
-          memory: 1G # Chroma can be RAM heavy during indexing
+          memory: 1G
     networks:
       - data-tier
     volumes:
@@ -80,12 +77,13 @@ services:
       postgres: { condition: service_healthy }
       redis: { condition: service_healthy }
     env_file: .env
-    # Enterprise Logic: Connects to both worlds
     networks:
       - frontend-tier
       - data-tier
-    ports:
-      - "3000:3000"
+    # ✅ PRO TIP: Removed external ports: "3000:3000". 
+    # Only Caddy needs to talk to the backend. This closes a security hole.
+    expose:
+      - "3000"
     volumes:
       - uploads_data:/app/uploads
       - logs_data:/app/logs
@@ -101,8 +99,7 @@ services:
       dockerfile: Dockerfile
     container_name: nexasense-worker
     restart: always
-    init: true # ✅ CRITICAL: Reaps zombie Chrome processes
-    # ✅ FIXED: Explicit DNS for AWS/Docker network reliability
+    init: true
     dns:
       - 8.8.8.8
       - 1.1.1.1
@@ -115,10 +112,12 @@ services:
     deploy:
       resources:
         limits:
-          memory: 1.5G # High limit for Puppeteer + Transformers
+          memory: 1.5G
+    # ✅ FIX: Worker must be on frontend-tier to scrape the internet!
     networks:
+      - frontend-tier
       - data-tier
-    shm_size: "1gb" # ✅ UPGRADED: Maximum stability for headless Chrome
+    shm_size: "1gb"
     command: node src/workers/ingestion.worker.js
     volumes:
       - uploads_data:/app/uploads
@@ -181,14 +180,12 @@ services:
       - grafana_data:/var/lib/grafana
     logging: *default-logging
 
-# ── NETWORKS ───────────────────────────────────────────────
 networks:
   frontend-tier:
     driver: bridge
   data-tier:
-    internal: true # ✅ External traffic cannot hit your DBs directly
+    internal: true 
 
-# ── VOLUMES ────────────────────────────────────────────────
 volumes:
   postgres_data:
   chroma_data:
