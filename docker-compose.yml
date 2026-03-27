@@ -112,6 +112,12 @@ services:
       - uploads_data:/app/uploads
       - logs_data:/app/logs
       - model_cache:/app/.model-cache
+    # ──────────────────────────────────────────────────────
+    # PUPPETEER KE LIYE ZAROORI
+    # Default Docker /dev/shm = 64MB — Chromium crash karta hai
+    # shm_size badha ke 256MB karo
+    # ──────────────────────────────────────────────────────
+    shm_size: "256mb"
     command: node src/workers/ingestion.worker.js
     # Worker healthcheck — detects silent crashes
     healthcheck:
