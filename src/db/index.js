@@ -1,6 +1,6 @@
 // ============================================================
 // db/index.js
-// NexaSense AI Assistant
+// NexaSense AI Assistant (Optimized for High-Concurrency RAG)
 // PostgreSQL connection pool
 // ============================================================
 
@@ -9,9 +9,21 @@ const logger    = require("../utils/logger");
 
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
-  max: 20,
-  idleTimeoutMillis: 60000,       // 60s — survive long embedding jobs
-  connectionTimeoutMillis: 30000  // 30s — WASM embedding can be slow
+  
+  // 1. Dynamic Scaling: Default to 20, but allow ENV overrides for heavier instances
+  max: process.env.DB_POOL_MAX ? parseInt(process.env.DB_POOL_MAX) : 20,
+  
+  // 2. Aggressive Resource Cleanup: Kill idle connections faster to free up RAM
+  idleTimeoutMillis: 10000,       // Dropped from 60s -> 10s
+  
+  // 3. Fail-Fast Connection: Don't let the queue hang indefinitely
+  connectionTimeoutMillis: 15000, // Dropped from 30s -> 15s
+  
+  // 4. Query Failsafe: Prevent runaway vector searches from locking the DB
+  query_timeout: 30000,           // Hard-kill any query taking longer than 30s
+  
+  // 5. Memory Leak Guard: Cycle connections to flush the prepared statement cache
+  maxUses: 7500
 });
 
 // Test connection on startup and run critical migrations
@@ -20,7 +32,7 @@ pool.connect(async (err, client, release) => {
     logger.error("Database connection failed:", err.message);
     return;
   }
-  logger.info("✅ PostgreSQL connected");
+  logger.info("✅ PostgreSQL connected (Optimized Pool)");
   
   try {
     // Ensure uuid-ossp extension exists
@@ -29,7 +41,7 @@ pool.connect(async (err, client, release) => {
     // Ensure messages table exists
     await client.query(`
       CREATE TABLE IF NOT EXISTS messages (
-        id               UUID        PRIMARY KEY DEFAULT uuid_generate_v4(),
+        id               UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
         conversation_id  UUID        NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
         role             TEXT        NOT NULL CHECK (role IN ('user', 'assistant', 'system')),
         content          TEXT        NOT NULL,
@@ -47,12 +59,13 @@ pool.connect(async (err, client, release) => {
   } catch (syncErr) {
     logger.error("Database sync failed:", syncErr.message);
   } finally {
-    release();
+    release(); // Crucial: Always release the client back to the pool
   }
 });
 
 pool.on("error", (err) => {
-  logger.error("PostgreSQL pool error:", err.message);
+  // Log unexpected errors on idle clients rather than crashing the Node process
+  logger.error("PostgreSQL pool error (Idle client):", err.message);
 });
 
 // ─────────────────────────────────────────

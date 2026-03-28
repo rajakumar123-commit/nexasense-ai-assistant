@@ -1,39 +1,78 @@
 rajakumar-nexasense-ai.online {
 
     # -------------------------------
-    # Performance
+    # 1. GLOBAL SECURITY HEADERS
     # -------------------------------
-    encode gzip
-
-    # -------------------------------
-    # API (Express expects /api prefix)
-    # -------------------------------
-    handle /api/* {
-        reverse_proxy backend:3000
+    header {
+        # Enable HSTS (Strict Transport Security) - 1 Year
+        Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
+        
+        # Prevent Clickjacking
+        X-Frame-Options "SAMEORIGIN"
+        
+        # Prevent MIME-Sniffing
+        X-Content-Type-Options "nosniff"
+        
+        # XSS Protection
+        X-XSS-Protection "1; mode=block"
+        
+        # Permissions Policy (Privacy)
+        Permissions-Policy "geolocation=(), microphone=(), camera=()"
+        
+        # Referrer Policy
+        Referrer-Policy "no-referrer-when-downgrade"
     }
 
     # -------------------------------
-    # Metrics (Alias /metrics to /api/metrics)
+    # 2. MODERN PERFORMANCE
     # -------------------------------
+    # Use zstd (faster/better) and gzip for older clients
+    encode zstd gzip
+
+    # -------------------------------
+    # 3. LOGGING (Crucial for Debugging)
+    # -------------------------------
+    log {
+        output file /var/log/caddy/access.log {
+            roll_size 10mb
+            roll_keep 5
+        }
+    }
+
+    # -------------------------------
+    # 4. API & METRICS
+    # -------------------------------
+    # API requests
+    handle /api/* {
+        reverse_proxy backend:3000 {
+            header_up X-Real-IP {remote_host}
+        }
+    }
+
+    # Clean Metrics routing
     handle /metrics {
         rewrite * /api/metrics
         reverse_proxy backend:3000
     }
 
     # -------------------------------
-    # Grafana (Elite Hardened Routing)
+    # 5. GRAFANA (Sub-path Hardened)
     # -------------------------------
+    # Since GF_SERVER_SERVE_FROM_SUB_PATH=true is in your Dockerfile,
+    # we don't use handle_path (which strips the prefix), we use handle.
     handle /grafana* {
-        reverse_proxy grafana:3000 {
+        reverse_proxy nexasense-grafana:3000 {
             header_up Host {host}
             header_up X-Real-IP {remote_host}
+            header_up X-Forwarded-For {remote_host}
             header_up X-Forwarded-Proto {scheme}
         }
     }
 
     # -------------------------------
-    # Frontend (React App)
+    # 6. FRONTEND (React App)
     # -------------------------------
+    # All other traffic goes to the frontend
     handle {
         reverse_proxy frontend:80
     }
