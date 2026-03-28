@@ -1,6 +1,6 @@
 // ============================================================
 // Chat.jsx — NexaSense
-// Premium animated AI chat interface
+// Premium animated AI chat interface (Streaming Enabled)
 // ============================================================
 import React, { useEffect, useRef, useState } from "react";
 import { useSearchParams, Link } from "react-router-dom";
@@ -42,7 +42,7 @@ function Chat() {
     }
 
     const recognition = new SpeechRecognition();
-    recognition.lang           = "";  // empty = uses browser/OS language (Hindi, English, etc.)
+    recognition.lang           = "";  // empty = uses browser/OS language
     recognition.interimResults = false;
     recognition.maxAlternatives = 1;
     recognition.onresult = (event) => {
@@ -67,7 +67,9 @@ function Chat() {
   const updateSession = (sessionId, updater) =>
     setSessions(prev => prev.map(s => s.id === sessionId ? updater(s) : s));
 
+  // Auto-scroll to bottom of chat
   useEffect(() => { chatEndRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages]);
+  
   useEffect(() => { 
     setSessions([]); 
     setActiveSession(null); 
@@ -123,7 +125,29 @@ function Chat() {
     setQuestion("");
 
     try {
-      const result = await streamQuery(currentQuestion, documentId, sessionId);
+      // ✅ Pass callbacks to render tokens as they stream in
+      const result = await streamQuery(currentQuestion, documentId, sessionId, {
+        onToken: (token, fullAnswerSoFar) => {
+          updateSession(sessionId, s => ({
+            ...s,
+            messages: s.messages.map(msg =>
+              msg.id === assistantId
+                ? { ...msg, content: fullAnswerSoFar }
+                : msg
+            )
+          }));
+        },
+        onMeta: (metadata) => {
+          updateSession(sessionId, s => ({
+            ...s,
+            messages: s.messages.map(msg =>
+              msg.id === assistantId
+                ? { ...msg, sources: metadata.sources || [] }
+                : msg
+            )
+          }));
+        }
+      });
       
       let finalSessionId = sessionId;
       if (result.conversationId && result.conversationId !== sessionId) {
@@ -135,16 +159,8 @@ function Chat() {
       }
 
       setPipeline(result.pipeline || null);
-      // Refresh credits in Navbar after each query
       refreshCredits();
-      updateSession(finalSessionId, s => ({
-        ...s,
-        messages: s.messages.map(msg =>
-          msg.id === assistantId
-            ? { ...msg, content: result.answer || "No answer returned.", sources: result.sources || [] }
-            : msg
-        )
-      }));
+
     } catch (err) {
       const message = err?.message || "Failed to fetch answer.";
       const isOutofCredits = message.toLowerCase().includes("credits") || message.toLowerCase().includes("upgrade");
@@ -161,7 +177,6 @@ function Chat() {
           } : msg
         )
       }));
-      // Only set generic top error if it's NOT a credit error
       if (!isOutofCredits) setError(message);
     }
   };
@@ -293,8 +308,8 @@ function Chat() {
             );
           })}
 
-          {/* Typing indicator */}
-          {loading && (
+          {/* Typing indicator (only shows before the first token arrives) */}
+          {loading && messages.length > 0 && messages[messages.length-1].role === "assistant" && messages[messages.length-1].content === "" && (
             <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex items-start gap-3">
               <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-blue-500 to-violet-600 flex items-center justify-center flex-shrink-0">
                 <svg className="w-4 h-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" /></svg>

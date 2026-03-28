@@ -1,5 +1,6 @@
 const razorpay = require("../config/razorpay");
 const db = require("../db");
+const logger = require("../utils/logger");
 const verifySignature = require("../utils/verifySignature");
 
 const PLAN_CONFIG = {
@@ -76,7 +77,8 @@ exports.createOrder = async (req, res) => {
       currency: "INR",
     });
   } catch (err) {
-    console.error("CreateOrder Error:", err);
+    // ✅ FIX: Use logger instead of console.error so errors appear in Winston + Grafana
+    logger.error("[Payment] CreateOrder error:", err.message);
     return res.status(500).json({ error: "Failed to create order" });
   }
 };
@@ -182,9 +184,10 @@ exports.verifyPayment = async (req, res) => {
     });
   } catch (err) {
     await client.query("ROLLBACK");
-    console.error("VerifyPayment Error:", err);
+    // ✅ FIX: Use logger instead of console.error so errors appear in Winston + Grafana
+    logger.error("[Payment] VerifyPayment error:", err.message);
     return res.status(500).json({ error: "Payment verification failed" });
   } finally {
     client.release();
   }
-};
+};

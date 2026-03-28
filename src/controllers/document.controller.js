@@ -283,11 +283,13 @@ async function deleteDocument(req, res) {
       [id]
     );
 
-    const filePath =
-      path.join(__dirname, "../../uploads", fileName);
+    const filePath = path.join(__dirname, "../../uploads", fileName);
 
+    // ✅ FIX W3: Use async unlink — unlinkSync blocks the Node.js event loop
     if (fs.existsSync(filePath)) {
-      fs.unlinkSync(filePath);
+      await fs.promises.unlink(filePath).catch(e =>
+        logger.warn(`[Documents] File unlink failed: ${e.message}`)
+      );
     }
 
     logger.info(`[Documents] Deleted ${id} | user ${userId}`);

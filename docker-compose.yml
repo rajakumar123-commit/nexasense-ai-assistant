@@ -47,6 +47,12 @@ services:
       - redis_data:/data
     healthcheck:
       test: [ "CMD", "redis-cli", "ping" ]
+      # ✅ FIX: Added explicit interval/timeout/retries
+      # Previously missing — Docker defaults vary across versions
+      # backend + worker depend on redis: { condition: service_healthy }
+      interval: 10s
+      timeout: 5s
+      retries: 5
     logging: *default-logging
 
   # ── ChromaDB ──────────────────────────────────────────────

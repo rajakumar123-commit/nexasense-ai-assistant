@@ -109,5 +109,6 @@ async function askGemini(prompt, retries = 3) {
 
 
 module.exports = {
-  askGemini
+  askGemini,
+  getModel
 };

@@ -19,11 +19,13 @@ function initStream(res) {
     res.setHeader("Cache-Control", "no-cache");
     res.setHeader("Connection", "keep-alive");
 
-    // important for nginx / docker proxies
+    // Important for nginx / docker proxies — prevents buffering SSE
     res.setHeader("X-Accel-Buffering", "no");
 
-    // allow cross origin streaming
-    res.setHeader("Access-Control-Allow-Origin", "*");
+    // ✅ FIX: Removed Access-Control-Allow-Origin: * here.
+    // Caddy already sets CORS headers globally. A duplicate header causes
+    // browser errors and cannot coexist with credentials in hardened setups.
+    // Express app.js cors() middleware handles this correctly.
 
     res.flushHeaders?.();
 

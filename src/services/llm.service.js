@@ -1,7 +1,7 @@
 // ============================================================
 // llm.service.js
-// NexaSense AI Assistant — V5.0 Ultimate (Unified PDF & Link)
-// Hybrid: V7 Reasoning + V5.0 Resilience & Semantic Bridge
+// NexaSense AI Assistant — V5.1 Ultimate
+// Hybrid: V7 Reasoning + True Native LLM Streaming
 // ============================================================
 
 "use strict";
@@ -36,14 +36,12 @@ function buildContext(chunks = []) {
     .map((chunk, i) => {
       const content = (chunk.content || "").trim();
       
-      // ✅ V5.0 Bridge: Detect if this is a Scraped Link chunk with a Category
       const categoryMatch = content.match(/^\[Category: (\w+)\]/);
       const category = categoryMatch ? ` | Type: ${categoryMatch[1]}` : "";
       
       const page = chunk.metadata?.pageNumber ? ` | Page ${chunk.metadata.pageNumber}` : "";
       const score = chunk.similarity ? ` | Relevance: ${(chunk.similarity * 100).toFixed(0)}%` : "";
 
-      // Remove the internal tag from the text sent to LLM for cleanliness
       const cleanContent = content.replace(/^\[Category: \w+\]\s*/, "");
 
       return `[[SOURCE ${i + 1}${category}${page}${score}]]\n${cleanContent}`;
@@ -52,7 +50,7 @@ function buildContext(chunks = []) {
 }
 
 // ============================================================
-// SYSTEM PROMPT — Your V7 Structured Logic Kept 100%
+// SYSTEM PROMPT
 // ============================================================
 
 function buildSystemPrompt(hasContext) {
@@ -64,7 +62,6 @@ Provide a short, clear general explanation (max 3–4 lines).
 RULES: Match language, be concise, do not hallucinate.`;
   }
 
-  // Your full V7 Enterprise logic merged with V5 Semantic awareness
   return `You are NexaSense AI V7 — an enterprise-grade document intelligence system.
 Your task is to generate accurate, structured, and trustworthy answers STRICTLY based on provided document sources.
 
@@ -100,7 +97,7 @@ End with:
 }
 
 // ============================================================
-// RESILIENCE — Agentic Retries for Production
+// RESILIENCE — Agentic Retries for Production (Standard)
 // ============================================================
 
 async function callGroqWithRetry(messages, attempt = 1) {
@@ -164,8 +161,62 @@ async function generateAnswer(question, chunks = [], history = []) {
   }
 }
 
+// ============================================================
+// ✅ NEW: True Streaming Generator
+// ============================================================
+
+async function generateAnswerStream(question, chunks = [], history = [], onToken) {
+  try {
+    const context = buildContext(chunks);
+    const hasContext = !!(context && context.trim());
+
+    const safeHistory = (history || [])
+      .slice(-MAX_HISTORY_MSGS)
+      .filter(m => m?.role && m?.content)
+      .map(m => ({
+        role: m.role === "assistant" ? "assistant" : "user",
+        content: String(m.content)
+      }));
+
+    const messages = [
+      { role: "system", content: buildSystemPrompt(hasContext) },
+      ...safeHistory,
+      {
+        role: "user",
+        content: `## Document Sources\n${context}\n\n---\n## Question\n${question}\n\n[CRITICAL: Reply in the SAME language as the question.]`
+      }
+    ];
+
+    const stream = await getClient().chat.completions.create({
+      model: MODEL_NAME,
+      messages,
+      max_tokens: MAX_TOKENS,
+      temperature: 0.2,
+      top_p: 0.9,
+      stream: true, 
+    });
+
+    let fullAnswer = "";
+    
+    // Pipe tokens out instantly as they arrive
+    for await (const chunk of stream) {
+      const token = chunk.choices[0]?.delta?.content || "";
+      if (token) {
+        fullAnswer += token;
+        if (onToken) onToken(token); 
+      }
+    }
+
+    return fullAnswer || "The model could not generate an answer.";
+
+  } catch (error) {
+    logger.error("[LLM Stream] Generation failed:", error.message);
+    throw new Error("LLM stream generation failed");
+  }
+}
+
 function estimateTokens(text) {
   return Math.ceil((text || "").length / 4);
 }
 
-module.exports = { generateAnswer, buildContext, estimateTokens };
+module.exports = { generateAnswer, generateAnswerStream, buildContext, estimateTokens };

@@ -25,8 +25,25 @@ export function AuthProvider({ children }) {
 
     api.get("/auth/me")
       .then(res => setUser(res.data.user))
-      .catch(() => {
-        // Token invalid or expired — clear both storage keys
+      .catch(async (err) => {
+        // ✅ FIX RISK8: Attempt silent token refresh before giving up.
+        // Previously, an expired access token cleared storage immediately without
+        // trying the refresh token — wasting a valid 7-day refresh token.
+        if (err.response?.status === 401) {
+          const refreshToken = localStorage.getItem("refreshToken");
+          if (refreshToken) {
+            try {
+              const r = await api.post("/auth/refresh", { refreshToken });
+              localStorage.setItem("token", r.data.accessToken);
+              const me = await api.get("/auth/me");
+              setUser(me.data.user);
+              return; // ✅ Successfully refreshed — no redirect needed
+            } catch {
+              // Refresh failed — fall through to clear storage
+            }
+          }
+        }
+        // Token invalid AND refresh failed (or no refresh token) — clear all
         localStorage.removeItem("token");
         localStorage.removeItem("refreshToken");
       })

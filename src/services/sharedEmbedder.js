@@ -66,6 +66,9 @@ if (process.env.IS_EMBED_WORKER === 'true') {
       } catch (err) {
         process.send({ type: "error", id, error: err.message });
       }
+    }).catch(err => {
+      // ✅ CRITICAL FIX: Catch fatal native errors to prevent permanent mutex locking
+      console.error("[SharedEmbedder] Fatal Mutex Chain Error:", err);
     });
   });
 
