@@ -135,8 +135,8 @@ async function searchDocument(documentId, query, k = 5) {
       similarity: Number(c.similarity?.toFixed(4) || 0),
     }));
 
-  } catch (err) {
-    logger.error("[VectorSearch] searchDocument error:", err.message);
+  } catch (error) {
+    logger.error("[VectorSearch] ❌ Fatal error:", error);
     return [];
   }
 }
@@ -171,7 +171,7 @@ async function searchUserDocuments(userId, query, k = 5) {
     return resultsArray.flat();
 
   } catch (err) {
-    logger.error("[VectorSearch] searchUserDocuments error:", err.message);
+    logger.error("[VectorSearch] searchUserDocuments error:", err); // ✅ Improved logging
     return [];
   }
 }

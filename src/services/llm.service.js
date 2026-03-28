@@ -164,9 +164,9 @@ async function generateAnswer(question, chunks = [], history = []) {
     return answer || "The model could not generate an answer.";
 
   } catch (error) {
-    logger.error("[LLM] Generation failed:", error.message);
+    logger.error("[LLM] Generation failed:", error); // ✅ Improved logging
     if (error.status === 429) throw new Error("Rate limit reached. Please retry shortly.");
-    throw new Error("LLM generation failed");
+    throw new Error(error.message || "LLM generation failed");
   }
 }
 
@@ -219,8 +219,8 @@ async function generateAnswerStream(question, chunks = [], history = [], onToken
     return fullAnswer || "The model could not generate an answer.";
 
   } catch (error) {
-    logger.error("[LLM Stream] Generation failed:", error.message);
-    throw new Error("LLM stream generation failed");
+    logger.error("[LLM Stream] Generation failed:", error); // ✅ Improved logging
+    throw new Error(error.message || "LLM stream generation failed");
   }
 }
 

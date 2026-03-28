@@ -473,7 +473,7 @@ async function runRetrievalPipeline({ userId, documentId, question, conversation
     return result;
 
   } catch (error) {
-    logger.error("[Pipeline] ❌ Fatal error:", error.message, error.stack);
+    logger.error("[Pipeline] ❌ Fatal error:", error); // ✅ Improved logging
 
     return {
       answer         : "A system error occurred. Please try again in a moment.",
