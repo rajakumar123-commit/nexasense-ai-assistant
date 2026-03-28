@@ -112,14 +112,23 @@ function getConvSvc() {
 
 // Deduplicate chunks by chunkIndex or content prefix
 function dedupe(chunks = []) {
-  const seen = new Set();
+  const seen = new Map();
   return chunks.filter(c => {
     const key =
       c?.metadata?.chunkIndex != null
         ? `${c?.metadata?.documentId || ""}:${c.metadata.chunkIndex}`
         : (c?.content || "").slice(0, 150);
-    if (!key || seen.has(key)) return false;
-    seen.add(key);
+        
+    if (!key) return false;
+    
+    if (seen.has(key)) {
+      if (c.keywordMatch) {
+         seen.get(key).keywordMatch = true; 
+      }
+      return false;
+    }
+    
+    seen.set(key, c);
     return true;
   });
 }

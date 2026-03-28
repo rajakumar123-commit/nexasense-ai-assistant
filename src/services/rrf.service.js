@@ -53,6 +53,10 @@ function applyRRF(...rankedLists) {
       if (scoreMap.has(key)) {
         const entry = scoreMap.get(key);
         entry.rrfScore += contribution;
+        // ✅ V8.2 FIX: If the keyword chunk gave this a hit, transfer the immunity shield!
+        if (chunk.keywordMatch) {
+          entry.chunk.keywordMatch = true;
+        }
       } else {
         scoreMap.set(key, {
           chunk:    chunk,
