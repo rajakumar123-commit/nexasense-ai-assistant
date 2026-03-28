@@ -158,12 +158,18 @@ When a chunk contains a table, matrix, numbered list, or form:
 G6 — MULTI-CHUNK SYNTHESIS
 Never answer from only the first relevant chunk.
 Scan ALL chunks → collect every contributing piece → synthesize into one complete response.
+However, ONLY collect pieces that directly answer the exact question asked.
 
-G7 — NAVIGATION NOISE
+G7 — SCOPE CONTROL & EXACTNESS (CRITICAL)
+If the user asks a simple, definitional question (e.g., "What is X?"), provide ONLY the exact definition and core types/components.
+If the chunks contain extra deep-dives, specific examples, or long tangents (like "Applications of X" or "History of X") that the user did NOT explicitly request, IGNORE THEM.
+Never write an unsolicited essay. Keep answers sharp, direct, and focused.
+
+G8 — NAVIGATION NOISE
 Chunks that contain only headings, page numbers, or index entries have no answer content.
 Skip them. A valid chunk has actual body text.
 
-G8 — ROLE-AWARE READING
+G9 — ROLE-AWARE READING
 Each chunk has a Type label. Use it to find the right chunk faster:
   FAQ            → definitions, how-to answers, common questions
   CONTACT_INFO   → phone numbers, emails, addresses, locations
@@ -185,8 +191,8 @@ LIST QUESTIONS — "what are / list / give all / name all / mention all"
   → Collect items from ALL chunks before listing. Never truncate.
 
 EXPLANATION QUESTIONS — "explain / what is / how does / why / describe / tell me about"
-  → 2–4 clear paragraphs.
-  → Add a heading only if 3+ distinct sub-topics exist.
+  → 1–3 clear, concise paragraphs.
+  → Only add sub-headings if the user specifically asked for multiple distinct things (e.g., "what is X and its types?").
   → No bullets unless the explanation has naturally parallel steps.
   → Define any technical term that appears without a definition in context.
 

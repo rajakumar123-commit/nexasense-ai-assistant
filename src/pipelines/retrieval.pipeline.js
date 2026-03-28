@@ -22,29 +22,29 @@
 
 "use strict";
 
-const { searchDocument, searchUserDocuments }  = require("../services/vectorSearch.service");
+const { searchDocument, searchUserDocuments } = require("../services/vectorSearch.service");
 const {
   keywordSearch,
   wordLevelSearch,
   getDocumentChunkCount,
   getAllDocumentChunks,
-}                                              = require("../services/keywordSearch.service");
-const { rerankChunks }                         = require("../services/reranker.service");
-const { processQueryWithGroq }                 = require("../services/queryRewrite.service");
+} = require("../services/keywordSearch.service");
+const { rerankChunks } = require("../services/reranker.service");
+const { processQueryWithGroq } = require("../services/queryRewrite.service");
 // ✅ ADDED: generateAnswerStream
 const { generateAnswer, generateAnswerStream } = require("../services/llm.service");
-const { compressContext }                      = require("../services/contextCompression.service");
-const { reflectAnswer }                        = require("../services/selfReflection.service");
-const { applyReasoning }                       = require("../services/geminiReasoning.service");
-const { askGemini }                            = require("../services/gemini.service");
-const { getCachedResult, storeCachedResult }   = require("../cache/queryCache");
+const { compressContext } = require("../services/contextCompression.service");
+const { reflectAnswer } = require("../services/selfReflection.service");
+const { applyReasoning } = require("../services/geminiReasoning.service");
+const { askGemini } = require("../services/gemini.service");
+const { getCachedResult, storeCachedResult } = require("../cache/queryCache");
 const { getSemanticCache, storeSemanticCache } = require("../cache/semanticCache");
-const { normalizeQuery }                       = require("../services/queryNormalizer.service");
-const { recordQueryMetrics }                   = require("../services/metrics.service");
+const { normalizeQuery } = require("../services/queryNormalizer.service");
+const { recordQueryMetrics } = require("../services/metrics.service");
 // ✅ V7.0 NEW SERVICES
-const { applyRRF }                             = require("../services/rrf.service");
-const { expandWithParentChunks }               = require("../services/parentDocument.service");
-const logger                                   = require("../utils/logger");
+const { applyRRF } = require("../services/rrf.service");
+const { expandWithParentChunks } = require("../services/parentDocument.service");
+const logger = require("../utils/logger");
 
 // ─────────────────────────────────────────────────────────────
 // SECTION 1 — CONFIGURATION
@@ -52,20 +52,20 @@ const logger                                   = require("../utils/logger");
 
 // Configuration
 const CFG = {
-  VECTOR_K               : 15,    // ✅ Wide context fetch for loose tables
-  KEYWORD_K              : 8,     // ✅ Catch headers accurately
-  MIN_SIMILARITY         : 0.30,  // ✅ Low enough for structurally separated tables
-  PRE_RERANK_POOL        : 60,    // ✅ Wide candidate pool before MMR filters
-  RERANK_THRESHOLD       : 0.30,  // ✅ Aligned with MIN_SIMILARITY
-  RERANK_FLOOR           : 6,     // ✅ Always keep at least 6 chunks
-  MAX_FINAL_CHUNKS       : 30,    // ✅ INCREASED: since chunk size is now 800, we can feed 30 chunks (~6k tokens) to LLM
-  GUARANTEE_MAX_CHUNKS   : 60,    // ✅ MAX limit for Complete-Doc/Pass 4 deep sweeps
-  REFLECTION_MIN_CONF    : 0.20,
-  CATEGORY_BOOST         : 0.15,
+  VECTOR_K: 15,    // ✅ Wide context fetch for loose tables
+  KEYWORD_K: 8,     // ✅ Catch headers accurately
+  MIN_SIMILARITY: 0.30,  // ✅ Low enough for structurally separated tables
+  PRE_RERANK_POOL: 60,    // ✅ Wide candidate pool before MMR filters
+  RERANK_THRESHOLD: 0.30,  // ✅ Aligned with MIN_SIMILARITY
+  RERANK_FLOOR: 6,     // ✅ Always keep at least 6 chunks
+  MAX_FINAL_CHUNKS: 30,    // ✅ INCREASED: since chunk size is now 800, we can feed 30 chunks (~6k tokens) to LLM
+  GUARANTEE_MAX_CHUNKS: 60,    // ✅ MAX limit for Complete-Doc/Pass 4 deep sweeps
+  REFLECTION_MIN_CONF: 0.20,
+  CATEGORY_BOOST: 0.15,
   // V8.0 Guarantee thresholds
-  MIN_CHUNKS_GUARANTEE   : 5,     // Trigger Pass 2 if below this
-  PASS3_TRIGGER          : 3,     // Trigger Pass 3 (word-level) if still below this
-  SMALL_DOC_THRESHOLD    : 60,    // Docs with ≤ 60 chunks get complete retrieval
+  MIN_CHUNKS_GUARANTEE: 5,     // Trigger Pass 2 if below this
+  PASS3_TRIGGER: 3,     // Trigger Pass 3 (word-level) if still below this
+  SMALL_DOC_THRESHOLD: 60,    // Docs with ≤ 60 chunks get complete retrieval
 };
 
 // ─────────────────────────────────────────────────────────────
@@ -76,18 +76,18 @@ const CFG = {
 
 const CATEGORY_RULES = [
   // Contact / business
-  { pattern: /phone|mobile|call|email|contact|address|reach|location|whatsapp/i, role: "CONTACT_INFO"        },
-  { pattern: /service|offer|solution|feature|capability|plan|package/i,          role: "SERVICE_DESCRIPTION" },
-  { pattern: /price|cost|rate|fee|charge|₹|\$|usd|specification|sku|dimension/i, role: "PRODUCT_DETAIL"      },
-  { pattern: /review|testimonial|feedback|rating|star|customer said/i,           role: "TESTIMONIAL"         },
-  { pattern: /faq|frequently|how do i|what is|how to|can i/i,                    role: "FAQ"                 },
-  { pattern: /terms|privacy|policy|copyright|legal|disclaimer/i,                 role: "LEGAL_FOOTER"        },
+  { pattern: /phone|mobile|call|email|contact|address|reach|location|whatsapp/i, role: "CONTACT_INFO" },
+  { pattern: /service|offer|solution|feature|capability|plan|package/i, role: "SERVICE_DESCRIPTION" },
+  { pattern: /price|cost|rate|fee|charge|₹|\$|usd|specification|sku|dimension/i, role: "PRODUCT_DETAIL" },
+  { pattern: /review|testimonial|feedback|rating|star|customer said/i, role: "TESTIMONIAL" },
+  { pattern: /faq|frequently|how do i|what is|how to|can i/i, role: "FAQ" },
+  { pattern: /terms|privacy|policy|copyright|legal|disclaimer/i, role: "LEGAL_FOOTER" },
   // Technical / ML document roles (V7.0)
-  { pattern: /algorithm|pseudocode|procedure|step \d|input:|output:/i,           role: "ALGORITHM"           },
-  { pattern: /definition|defined as|formally|denoted by/i,                       role: "DEFINITION"          },
-  { pattern: /example|for instance|consider|case study|e\.g\./i,                 role: "EXAMPLE"             },
-  { pattern: /formula|equation|\\frac|\\sum|\\int|proof|theorem/i,               role: "FORMULA"             },
-  { pattern: /introduction|overview|background|motivation|abstract/i,            role: "OVERVIEW"            },
+  { pattern: /algorithm|pseudocode|procedure|step \d|input:|output:/i, role: "ALGORITHM" },
+  { pattern: /definition|defined as|formally|denoted by/i, role: "DEFINITION" },
+  { pattern: /example|for instance|consider|case study|e\.g\./i, role: "EXAMPLE" },
+  { pattern: /formula|equation|\\frac|\\sum|\\int|proof|theorem/i, role: "FORMULA" },
+  { pattern: /introduction|overview|background|motivation|abstract/i, role: "OVERVIEW" },
 ];
 
 function detectCategory(question) {
@@ -129,7 +129,7 @@ function dedupe(chunks = []) {
 function getChunkRole(chunk) {
   return (
     chunk?.metadata?.role ||
-    chunk?.role            ||
+    chunk?.role ||
     "GENERAL_CONTENT"
   );
 }
@@ -146,20 +146,20 @@ function timer() {
 // ─────────────────────────────────────────────────────────────
 
 async function groqGeneralAnswer(question) {
-  const Groq   = require("groq-sdk");
+  const Groq = require("groq-sdk");
   const client = new Groq({ apiKey: process.env.GROQ_API_KEY });
 
   const res = await client.chat.completions.create({
-    model    : "llama-3.3-70b-versatile",
-    messages : [
+    model: "llama-3.3-70b-versatile",
+    messages: [
       {
-        role    : "system",
-        content : "You are NexaSense AI. The user's question is not covered in their uploaded documents. Start your reply with: '⚠️ I couldn't find this in your documents. From my general knowledge:' then answer helpfully.",
+        role: "system",
+        content: "You are NexaSense AI. The user's question is not covered in their uploaded documents. Start your reply with: '⚠️ I couldn't find this in your documents. From my general knowledge:' then answer helpfully.",
       },
       { role: "user", content: question },
     ],
-    max_tokens  : 600,
-    temperature : 0.3,
+    max_tokens: 600,
+    temperature: 0.3,
   });
 
   return res?.choices?.[0]?.message?.content || "";
@@ -168,7 +168,7 @@ async function groqGeneralAnswer(question) {
 async function generalKnowledgeFallback({ question, chunksRetrieved, startTime, latency }) {
   logger.info("[Pipeline] No usable chunks — triggering general knowledge fallback");
 
-  let answer   = "";
+  let answer = "";
   let provider = "gemini";
 
   try {
@@ -176,24 +176,24 @@ async function generalKnowledgeFallback({ question, chunksRetrieved, startTime, 
     answer = await askGemini(prompt);
   } catch {
     try {
-      answer   = await groqGeneralAnswer(question);
+      answer = await groqGeneralAnswer(question);
       provider = "groq-fallback";
     } catch (e) {
       logger.error("[Pipeline] Both fallbacks failed:", e.message);
-      answer   = "I couldn't find relevant information in your documents and my general knowledge lookup also failed. Please try rephrasing.";
+      answer = "I couldn't find relevant information in your documents and my general knowledge lookup also failed. Please try rephrasing.";
       provider = "error-fallback";
     }
   }
 
   return {
     answer,
-    sources        : [],
+    sources: [],
     provider,
     chunksRetrieved,
-    chunksUsed     : 0,
-    fromCache      : false,
+    chunksUsed: 0,
+    fromCache: false,
     latency,
-    responseTimeMs : Date.now() - startTime,
+    responseTimeMs: Date.now() - startTime,
   };
 }
 
@@ -207,8 +207,8 @@ async function runRetrievalPipeline({ userId, documentId, question, conversation
   let detectedLanguage = "en";
 
   const startTime = Date.now();
-  const svc       = getConvSvc();
-  const latency   = {};     // per-step ms breakdown
+  const svc = getConvSvc();
+  const latency = {};     // per-step ms breakdown
   let chunksRetrieved = 0;
 
   // Normalise input
@@ -242,7 +242,7 @@ async function runRetrievalPipeline({ userId, documentId, question, conversation
     // ── STEP 3: Load conversation history ────────────────────
     let history = [];
     if (conversationId && svc) {
-      try { history = await svc.getConversationHistory(conversationId); } catch {}
+      try { history = await svc.getConversationHistory(conversationId); } catch { }
     }
 
     // ── STEP 4: Query rewrite + HYDE (Groq) ──────────────────
@@ -250,7 +250,7 @@ async function runRetrievalPipeline({ userId, documentId, question, conversation
     logger.info("[Pipeline] Step 4: Query rewrite");
 
     const groqResult = await processQueryWithGroq(question, history);
-    latency.rewrite  = t4();
+    latency.rewrite = t4();
 
     // ✅ Extract detected language & weak query flag from query rewriter
     detectedLanguage = groqResult.detectedLanguage || "en";
@@ -259,8 +259,8 @@ async function runRetrievalPipeline({ userId, documentId, question, conversation
 
     // ✅ WEAK QUERY MODE: relax thresholds so vague queries still find content
     const effectiveMinSimilarity = isWeakQuery ? Math.min(CFG.MIN_SIMILARITY, 0.25) : CFG.MIN_SIMILARITY;
-    const effectiveVectorK       = isWeakQuery ? Math.max(CFG.VECTOR_K, 25)        : CFG.VECTOR_K;
-    const effectivePool          = isWeakQuery ? Math.max(CFG.PRE_RERANK_POOL, 80) : CFG.PRE_RERANK_POOL;
+    const effectiveVectorK = isWeakQuery ? Math.max(CFG.VECTOR_K, 25) : CFG.VECTOR_K;
+    const effectivePool = isWeakQuery ? Math.max(CFG.PRE_RERANK_POOL, 80) : CFG.PRE_RERANK_POOL;
 
     if (isWeakQuery) {
       logger.info(`[Pipeline] Weak query mode: similarity>=${effectiveMinSimilarity} K=${effectiveVectorK} pool=${effectivePool}`);
@@ -290,13 +290,13 @@ async function runRetrievalPipeline({ userId, documentId, question, conversation
       logger.debug(`[Pipeline] Category detected: ${detectedRole}`);
     }
 
-    logger.debug(`[Pipeline] Vector Queries (${vectorQuerySet.length}): ${vectorQuerySet.map(q => `"${q.slice(0,30)}"`).join(", ")}`);
-    logger.debug(`[Pipeline] Keyword Queries (${keywordQuerySet.length}): ${keywordQuerySet.map(q => `"${q.slice(0,30)}"`).join(", ")}`);
+    logger.debug(`[Pipeline] Vector Queries (${vectorQuerySet.length}): ${vectorQuerySet.map(q => `"${q.slice(0, 30)}"`).join(", ")}`);
+    logger.debug(`[Pipeline] Keyword Queries (${keywordQuerySet.length}): ${keywordQuerySet.map(q => `"${q.slice(0, 30)}"`).join(", ")}`);
 
     // ── STEP 5: Hybrid retrieval ─────────────────────────────
-    const t5       = timer();
+    const t5 = timer();
     const isGlobal = userId && documentId === "all";
-    
+
     // Fetch document size early for large-doc heuristics
     let docChunkCount = null;
     if (!isGlobal && documentId) {
@@ -335,11 +335,11 @@ async function runRetrievalPipeline({ userId, documentId, question, conversation
 
     ]);
 
-    latency.vector  = t5();
+    latency.vector = t5();
     latency.keyword = t5(); // keyword runs in same Promise.all — approximate
 
     // ✅ V7.0: Reciprocal Rank Fusion — replaces naive flatten+sort.
-    const flatVector  = vectorResults.flat();
+    const flatVector = vectorResults.flat();
     const flatKeyword = keywordResults.flat();
 
     const rawChunks = dedupe(applyRRF(flatVector, flatKeyword));
@@ -447,9 +447,9 @@ async function runRetrievalPipeline({ userId, documentId, question, conversation
           }
         } else if (chunkCount > CFG.SMALL_DOC_THRESHOLD) {
           logger.info(`[Pipeline] Doc too large (${chunkCount} chunks) for complete retrieval — triggering Pass 4 Deep High-Recall Sweep`);
-          
+
           const limitPerWord = Math.min(50, Math.ceil(chunkCount * 0.05));
-          
+
           const deepWordChunks = await wordLevelSearch(
             documentId,
             groqResult.standaloneQuery || question,
@@ -550,10 +550,10 @@ async function runRetrievalPipeline({ userId, documentId, question, conversation
     } catch (rerankErr) {
       logger.warn("[Pipeline] Reranker failed — using pre-rerank order:", rerankErr.message);
       latency.rerank = t8();
-      
+
       const hasCompleteDoc = chunks.some(c => c.metadata?.completeDoc);
       const limit = hasCompleteDoc ? CFG.GUARANTEE_MAX_CHUNKS : CFG.MAX_FINAL_CHUNKS;
-      
+
       finalChunks = chunks.slice(0, limit);
     }
 
@@ -568,7 +568,7 @@ async function runRetrievalPipeline({ userId, documentId, question, conversation
     // Cleans whitespace/formatting noise before sending to LLM
     let contextChunks = finalChunks;
     try {
-      contextChunks  = await compressContext(question, finalChunks);
+      contextChunks = await compressContext(question, finalChunks);
     } catch (compErr) {
       logger.warn("[Pipeline] Context compression failed — using raw chunks:", compErr.message);
     }
@@ -584,7 +584,7 @@ async function runRetrievalPipeline({ userId, documentId, question, conversation
     } else {
       answer = await generateAnswer(question, contextChunks, history, detectedLanguage);
     }
-    
+
     latency.llm = t10();
 
     logger.info(`[Pipeline] LLM answered in ${latency.llm}ms`);
@@ -612,13 +612,13 @@ async function runRetrievalPipeline({ userId, documentId, question, conversation
     const t12 = timer();
     try {
       const sources = finalChunks.map(c => ({
-        pageNumber : c.metadata?.pageNumber || null,
-        preview    : (c.content || "").slice(0, 150),
+        pageNumber: c.metadata?.pageNumber || null,
+        preview: (c.content || "").slice(0, 150),
       }));
 
       // ✅ Pass detectedLanguage so Gemini replies in the correct language
-      answer          = await applyReasoning(question, answer, sources, detectedLanguage);
-      latency.gemini  = t12();
+      answer = await applyReasoning(question, answer, sources, detectedLanguage);
+      latency.gemini = t12();
 
     } catch (reasonErr) {
       latency.gemini = t12();
@@ -633,27 +633,27 @@ async function runRetrievalPipeline({ userId, documentId, question, conversation
       vectorResults: (vectorResults?.flat() || []).slice(0, 5).map(c => ({ chunk: c?.content?.slice(0, 250), score: c?.similarity })),
       keywordResults: (keywordResults?.flat() || []).slice(0, 5).map(c => ({ chunk: c?.content?.slice(0, 250), score: c?.similarity })),
       reranked: (finalChunks || []).slice(0, 5).map(c => ({ chunk: c?.content?.slice(0, 250), score: c?.similarity })),
-      contextChunks: (contextChunks || []).slice(0, 10).map(c => typeof c === "string" ? c.slice(0, 250) : (c?.content||"").slice(0, 250))
+      contextChunks: (contextChunks || []).slice(0, 10).map(c => typeof c === "string" ? c.slice(0, 250) : (c?.content || "").slice(0, 250))
     };
 
     // Sources category reads metadata.role — set by worker V5.1
     const result = {
       answer,
       chunksRetrieved,
-      chunksUsed : finalChunks.length,
-      provider   : "groq+gemini",
-      fromCache  : false,
+      chunksUsed: finalChunks.length,
+      provider: "groq+gemini",
+      fromCache: false,
       latency,
-      pipeline   : debugPipeline,
-      sources    : finalChunks.map((c, i) => ({
-        sourceIndex : i + 1,
-        chunkIndex  : c?.metadata?.chunkIndex ?? null,
-        documentId  : c?.metadata?.documentId ?? null,
-        category    : getChunkRole(c),             // ← correct role
-        score       : Number((c.similarity || 0).toFixed(3)),
-        preview     : (c?.content || "").slice(0, 150).trim(),
+      pipeline: debugPipeline,
+      sources: finalChunks.map((c, i) => ({
+        sourceIndex: i + 1,
+        chunkIndex: c?.metadata?.chunkIndex ?? null,
+        documentId: c?.metadata?.documentId ?? null,
+        category: getChunkRole(c),             // ← correct role
+        score: Number((c.similarity || 0).toFixed(3)),
+        preview: (c?.content || "").slice(0, 150).trim(),
       })),
-      responseTimeMs : Date.now() - startTime,
+      responseTimeMs: Date.now() - startTime,
     };
 
     logger.info(
@@ -664,29 +664,29 @@ async function runRetrievalPipeline({ userId, documentId, question, conversation
 
     // ── STEP 14: Persist ──────────────────────────────────────
     if (conversationId && svc) {
-      svc.saveMessage(conversationId, "user",      question).catch(() => {});
-      svc.saveMessage(conversationId, "assistant", answer  ).catch(() => {});
+      svc.saveMessage(conversationId, "user", question).catch(() => { });
+      svc.saveMessage(conversationId, "assistant", answer).catch(() => { });
     }
 
     // Store in both caches
     storeCachedResult(documentId, question, result);
-    storeSemanticCache(question, result).catch(() => {});
+    storeSemanticCache(question, result).catch(() => { });
 
     // Record detailed metrics (non-blocking)
     recordQueryMetrics({
       userId,
       documentId,
       question,
-      totalMs      : result.responseTimeMs,
-      rewriteMs    : latency.rewrite   || 0,
-      vectorMs     : latency.vector    || 0,
-      keywordMs    : latency.keyword   || 0,
-      rerankerMs   : latency.rerank    || 0,
-      llmMs        : latency.llm       || 0,
+      totalMs: result.responseTimeMs,
+      rewriteMs: latency.rewrite || 0,
+      vectorMs: latency.vector || 0,
+      keywordMs: latency.keyword || 0,
+      rerankerMs: latency.rerank || 0,
+      llmMs: latency.llm || 0,
       chunksRetrieved,
-      chunksUsed   : finalChunks.length,
-      fromCache    : false,
-    }).catch(() => {});
+      chunksUsed: finalChunks.length,
+      fromCache: false,
+    }).catch(() => { });
 
     return result;
 
@@ -694,12 +694,12 @@ async function runRetrievalPipeline({ userId, documentId, question, conversation
     logger.error("[Pipeline] ❌ Fatal error:", error); // ✅ Improved logging
 
     return {
-      answer         : "A system error occurred. Please try again in a moment.",
-      sources        : [],
-      fromCache      : false,
+      answer: "A system error occurred. Please try again in a moment.",
+      sources: [],
+      fromCache: false,
       chunksRetrieved,
-      chunksUsed     : 0,
-      responseTimeMs : Date.now() - startTime,
+      chunksUsed: 0,
+      responseTimeMs: Date.now() - startTime,
     };
   }
 }
