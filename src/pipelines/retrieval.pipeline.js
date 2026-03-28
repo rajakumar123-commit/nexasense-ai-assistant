@@ -508,7 +508,12 @@ async function runRetrievalPipeline({ userId, documentId, question, conversation
     }
 
     chunks = chunks
-      .sort((a, b) => (b.similarity || 0) - (a.similarity || 0))
+      .sort((a, b) => {
+        // ✅ V8.1: Exact Keyword/Word hits are ALWAYS prioritized above fuzzy vector hits
+        if (a.keywordMatch && !b.keywordMatch) return -1;
+        if (!a.keywordMatch && b.keywordMatch) return 1;
+        return (b.similarity || 0) - (a.similarity || 0);
+      })
       .slice(0, effectivePool);
 
     chunksRetrieved = chunks.length;
@@ -528,7 +533,8 @@ async function runRetrievalPipeline({ userId, documentId, question, conversation
       const reranked = await rerankChunks(question, chunks);
       latency.rerank = t8();
 
-      finalChunks = reranked.filter(c => (c.similarity || 0) > CFG.RERANK_THRESHOLD);
+      // ✅ V8.1: keywordMatch chunks are immune from reranker destruction (even if semantic score is -50%)
+      finalChunks = reranked.filter(c => (c.similarity || 0) > CFG.RERANK_THRESHOLD || c.keywordMatch);
 
       // Floor: always keep at least RERANK_FLOOR chunks even if scores are low
       if (finalChunks.length < CFG.RERANK_FLOOR) {

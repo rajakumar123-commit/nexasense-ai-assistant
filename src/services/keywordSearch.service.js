@@ -10,7 +10,7 @@
 // ============================================================
 
 const { pool } = require("../db");
-const logger   = require("../utils/logger");
+const logger = require("../utils/logger");
 
 // English stop words — removed from word-level search to avoid noise
 const STOP_WORDS = new Set([
@@ -71,9 +71,10 @@ async function keywordSearch(documentId, query, limit = 5, userId = null) {
 
         if (ftsRows.length > 0) {
           return ftsRows.map(row => ({
-            content:    row.content,
-            metadata:   { chunkIndex: row.chunk_index, documentId: row.document_id },
+            content: row.content,
+            metadata: { chunkIndex: row.chunk_index, documentId: row.document_id },
             similarity: Math.min(0.9, 0.5 + Number(row.rank) * 0.1),
+            keywordMatch: true, // ✅ Prevents reranker from destroying exact text match
           }));
         }
       }
@@ -90,9 +91,10 @@ async function keywordSearch(documentId, query, limit = 5, userId = null) {
       );
 
       return rows.map(row => ({
-        content:    row.content,
-        metadata:   { chunkIndex: row.chunk_index, documentId: row.document_id },
+        content: row.content,
+        metadata: { chunkIndex: row.chunk_index, documentId: row.document_id },
         similarity: 0.4,
+        keywordMatch: true,
       }));
     }
 
@@ -118,9 +120,10 @@ async function keywordSearch(documentId, query, limit = 5, userId = null) {
 
       if (ftsRows.length > 0) {
         return ftsRows.map(row => ({
-          content:    row.content,
-          metadata:   { chunkIndex: row.chunk_index, documentId: row.document_id },
+          content: row.content,
+          metadata: { chunkIndex: row.chunk_index, documentId: row.document_id },
           similarity: Math.min(0.9, 0.5 + Number(row.rank) * 0.1),
+          keywordMatch: true,
         }));
       }
     }
@@ -139,9 +142,10 @@ async function keywordSearch(documentId, query, limit = 5, userId = null) {
     );
 
     return rows.map(row => ({
-      content:    row.content,
-      metadata:   { chunkIndex: row.chunk_index, documentId: row.document_id },
+      content: row.content,
+      metadata: { chunkIndex: row.chunk_index, documentId: row.document_id },
       similarity: 0.4,
+      keywordMatch: true,
     }));
 
   } catch (error) {
@@ -203,10 +207,10 @@ async function wordLevelSearch(documentId, query, limitPerWord = 5, userId = nul
             [documentId, `%${word}%`, limitPerWord]
           );
           return rows.map(row => ({
-            content:    row.content,
-            metadata:   { chunkIndex: row.chunk_index, documentId: row.document_id },
+            content: row.content,
+            metadata: { chunkIndex: row.chunk_index, documentId: row.document_id },
             similarity: 0.25,  // low baseline — these are broad matches
-            wordHit:    word,
+            wordHit: word,
           }));
         } else {
           const { rows } = await pool.query(
@@ -221,10 +225,11 @@ async function wordLevelSearch(documentId, query, limitPerWord = 5, userId = nul
             [userId, `%${word}%`, limitPerWord]
           );
           return rows.map(row => ({
-            content:    row.content,
-            metadata:   { chunkIndex: row.chunk_index, documentId: row.document_id },
+            content: row.content,
+            metadata: { chunkIndex: row.chunk_index, documentId: row.document_id },
             similarity: 0.25,
-            wordHit:    word,
+            wordHit: word,
+            keywordMatch: true,
           }));
         }
       } catch {
@@ -285,14 +290,14 @@ async function getAllDocumentChunks(documentId, limit = 60) {
     );
 
     return rows.map(row => ({
-      content:    row.content,
-      metadata:   {
+      content: row.content,
+      metadata: {
         ...(typeof row.metadata === "object" ? row.metadata : {}),
-        chunkIndex:  row.chunk_index,
-        documentId:  row.document_id,
+        chunkIndex: row.chunk_index,
+        documentId: row.document_id,
         completeDoc: true,    // flag so telemetry can show this
       },
-      role:       row.role || "GENERAL_CONTENT",
+      role: row.role || "GENERAL_CONTENT",
       similarity: 0.5,        // neutral similarity — reranker will score properly
     }));
   } catch (err) {
