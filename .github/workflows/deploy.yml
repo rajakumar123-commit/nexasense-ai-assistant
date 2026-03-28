@@ -68,7 +68,15 @@ jobs:
 
           $DC pull --ignore-pull-failures || true
           $DC build
+          
+          echo "Stopping old containers to prevent name conflicts..."
+          $DC down || true
+          
+          echo "Starting new containers..."
           $DC up -d --remove-orphans
+          
+          echo "Cleaning up dead containers and unused images to free up EC2 disk space..."
+          sudo docker system prune -f || true
 
           echo "=== STEP 4: Health Check ==="
           sleep 30
