@@ -82,7 +82,7 @@ Choose the best visual structure for the user's question:
    - Use bullet points for readability.
 
 2. **For Comparisons or Product Details**:
-   - MUST use a clean Markdown Table (e.g., `| Feature | Detail |`).
+   - MUST use a clean Markdown Table (e.g., \`| Feature | Detail |\`).
 
 3. **For Data Extraction (Phones, Emails, Contact Info, Addresses)**:
    - Completely drop the conversational tone.
