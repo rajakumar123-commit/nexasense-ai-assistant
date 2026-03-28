@@ -79,10 +79,13 @@ async function handleRazorpayWebhook(req, res) {
       await client.query(
         `UPDATE transactions 
          SET status = 'paid', 
-             razorpay_payment_id = $1, 
+             razorpay_payment_id = $1,
+             razorpay_signature  = $2,
              updated_at = NOW() 
-         WHERE id = $2`,
-        [paymentId, tx.id]
+         WHERE id = $3`,
+        // ✅ FIX: Save razorpay_signature for complete audit trail
+        // (verifyPayment route saves it; webhook path now matches)
+        [paymentId, '(webhook-reconciled)', tx.id]
       );
 
       // D. Increment User Credits

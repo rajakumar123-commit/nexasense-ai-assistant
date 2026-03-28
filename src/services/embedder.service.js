@@ -100,9 +100,15 @@ async function embedAndStoreChunks(documentId, chunks) {
       const indexToId = {};
       chunkRows.forEach(r => { indexToId[r.chunk_index] = r.id; });
 
-      const chunkIds = batch.map(c => indexToId[c.chunk_index]).filter(Boolean);
+      // ✅ FIX: Guarantee alignment between chunk IDs, contents, and embeddings.
+      // Filtering arrays independently causes index shifting if a chunk ID is missing.
+      const validItems = batch.map((c, idx) => ({
+        chunk: c,
+        embedding: embeddings[idx],
+        id: indexToId[c.chunk_index]
+      })).filter(x => x.id);
 
-      if (chunkIds.length === 0) {
+      if (validItems.length === 0) {
         logger.warn(`[Embedder] No chunk IDs found for batch ${batchIndex}. Skipping vector store.`);
         continue;
       }
@@ -113,13 +119,13 @@ async function embedAndStoreChunks(documentId, chunks) {
       await chromaFetch(addUrl, {
         method: "POST",
         body: JSON.stringify({
-          ids:        chunkIds,
-          embeddings: embeddings.slice(0, chunkIds.length),
-          documents:  texts.slice(0, chunkIds.length),
-          metadatas:  chunkIds.map((id, j) => ({
+          ids:        validItems.map(x => x.id),
+          embeddings: validItems.map(x => x.embedding),
+          documents:  validItems.map(x => x.chunk.content),
+          metadatas:  validItems.map(x => ({
             documentId,
-            chunkIndex: batch[j].chunk_index,
-            chunkId:    id
+            chunkIndex: x.chunk.chunk_index,
+            chunkId:    x.id
           }))
         })
       });

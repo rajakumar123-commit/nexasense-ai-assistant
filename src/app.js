@@ -1,6 +1,6 @@
 // ============================================================
 // app.js
-// NexaSense AI Assistant v4.2 (Ultimate)
+// NexaSense AI Assistant v5.1 (Enterprise)
 // Production-ready Express server
 // ============================================================
 
@@ -22,8 +22,6 @@ const documentRoutes = require("./routes/document.routes");
 const conversationRoutes = require("./routes/conversation.routes");
 const streamRoutes = require("./routes/stream.routes");
 const adminRoutes = require("./routes/admin.routes");
-
-// ✅ ADD THIS
 const paymentRoutes = require("./routes/payment.routes");
 const webhookRoutes = require("./routes/webhook.routes");
 const { metricsMiddleware, getMetrics } = require("./services/metrics.service");
@@ -33,22 +31,20 @@ const app = express();
 // ============================================================
 // Trust proxy (important for Docker / nginx)
 // ============================================================
-
 app.set("trust proxy", 1);
 
 // ============================================================
 // Security middleware
 // ============================================================
-
 app.use(helmet());
 
 // ============================================================
 // Compression
 // ============================================================
-
 app.use(
   compression({
     filter: (req, res) => {
+      // Do not compress Server-Sent Events (SSE) for real-time streaming
       if (req.headers["accept"] === "text/event-stream") {
         return false;
       }
@@ -60,7 +56,6 @@ app.use(
 // ============================================================
 // CORS
 // ============================================================
-
 app.use(
   cors({
     origin: process.env.FRONTEND_URL
@@ -73,26 +68,28 @@ app.use(
 );
 
 // ============================================================
-// Body Parsers
+// Body Parsers (✅ SECURED against DDoS & RAM Exhaustion)
 // ============================================================
 
+// 1. High-limit parser ONLY for webhooks (Must come before global parsers)
 app.use(
+  "/api/payment/webhook",
   express.json({
     limit: "50mb",
     verify: (req, res, buf) => {
-      // Capture raw body for webhook signature verification
-      if (req.originalUrl.includes("/webhook")) {
-        req.rawBody = buf.toString();
-      }
+      req.rawBody = buf.toString(); // Required for Stripe/Razorpay signature verification
     },
-  })
+  }),
+  webhookRoutes
 );
-app.use(express.urlencoded({ extended: true, limit: "50mb" }));
+
+// 2. Strict global limit for all other routes
+app.use(express.json({ limit: "2mb" }));
+app.use(express.urlencoded({ extended: true, limit: "2mb" }));
 
 // ============================================================
 // HTTP Logging
 // ============================================================
-
 app.use(
   morgan("combined", {
     stream: {
@@ -104,7 +101,6 @@ app.use(
 // ============================================================
 // Global Rate Limiter
 // ============================================================
-
 const globalLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 1000,
@@ -127,7 +123,6 @@ app.get("/api/metrics", getMetrics);
 // ============================================================
 // Auth Rate Limiter
 // ============================================================
-
 const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 20,
@@ -142,13 +137,12 @@ const authLimiter = rateLimit({
 // ============================================================
 // Health Endpoints
 // ============================================================
-
 app.get("/", (req, res) => {
   res.json({
     status: "ok",
     service: "NexaSense API",
-    version: "4.2.0",
-    message: "NexaSense V4.2 Ultimate — Production Ready",
+    version: "5.1.0",
+    message: "NexaSense V5.1 Enterprise — Production Ready",
   });
 });
 
@@ -163,41 +157,19 @@ app.get("/api/health", (req, res) => {
 // ============================================================
 // API Routes
 // ============================================================
-
-// Authentication (public)
 app.use("/api/auth", authLimiter, authRoutes);
-
-// Documents
 app.use("/api", documentRoutes);
-
-// Upload
 app.use("/api/upload", uploadRoutes);
-
-// Queries
 app.use("/api", queryRoutes);
-
-// Streaming
 app.use("/api", streamRoutes);
-
-// Conversations
 app.use("/api", conversationRoutes);
-
-// Dashboard
 app.use("/api/dashboard", dashboardRoutes);
-
-// Admin
 app.use("/api/admin", adminRoutes);
-
-// Payments
 app.use("/api/payments", paymentRoutes);
-
-// Webhooks (Public)
-app.use("/api/payment/webhook", webhookRoutes);
 
 // ============================================================
 // 404 Handler
 // ============================================================
-
 app.use((req, res) => {
   res.status(404).json({
     success: false,
@@ -208,7 +180,6 @@ app.use((req, res) => {
 // ============================================================
 // Global Error Handler
 // ============================================================
-
 app.use((err, req, res, next) => {
   logger.error("[App] Unhandled error:", err.stack || err.message);
 
