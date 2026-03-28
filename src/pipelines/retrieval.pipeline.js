@@ -409,6 +409,15 @@ async function runRetrievalPipeline({ userId, documentId, question, conversation
     }
 
     // ── STEP 13: Build result ─────────────────────────────────
+    // Build debugging telemetry for the UI Pipeline Inspector
+    const debugPipeline = {
+      rewrite: [groqResult?.standaloneQuery, ...(groqResult?.searchQueries || [])].filter(Boolean).join("\n"),
+      vectorResults: (vectorResults?.flat() || []).slice(0, 5).map(c => ({ chunk: c?.content?.slice(0, 250), score: c?.similarity })),
+      keywordResults: (keywordResults?.flat() || []).slice(0, 5).map(c => ({ chunk: c?.content?.slice(0, 250), score: c?.similarity })),
+      reranked: (finalChunks || []).slice(0, 5).map(c => ({ chunk: c?.content?.slice(0, 250), score: c?.similarity })),
+      contextChunks: (contextChunks || []).slice(0, 10).map(c => typeof c === "string" ? c.slice(0, 250) : (c?.content||"").slice(0, 250))
+    };
+
     // Sources category reads metadata.role — set by worker V5.1
     const result = {
       answer,
@@ -417,6 +426,7 @@ async function runRetrievalPipeline({ userId, documentId, question, conversation
       provider   : "groq+gemini",
       fromCache  : false,
       latency,
+      pipeline   : debugPipeline,
       sources    : finalChunks.map((c, i) => ({
         sourceIndex : i + 1,
         chunkIndex  : c?.metadata?.chunkIndex ?? null,

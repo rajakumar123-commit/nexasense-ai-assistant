@@ -165,7 +165,8 @@ async function streamQuery(req, res) {
       responseTimeMs:  result.responseTimeMs,
       tokenEstimate:   result.tokenEstimate,
       fromCache:       result.fromCache      || false,
-      conversationId:  convId
+      conversationId:  convId,
+      pipeline:        result.pipeline       || null // ✅ FIX: Send pipeline telemetry to frontend
     });
 
     // ---------------------------------------------------------
