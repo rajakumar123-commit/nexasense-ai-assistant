@@ -1,6 +1,6 @@
 // ============================================================
 // Scraper Service — NexaSense AI Assistant V5.0 Ultimate
-// Production Grade: Memory-Safe, Fingerprint Rotating, Semantic RAG
+// Hybrid: V4.2.2 precision + V5.0 architecture
 // ============================================================
 
 "use strict";
@@ -11,9 +11,6 @@ const cheerio = require("cheerio");
 const puppeteer = require("puppeteer");
 const logger = require("../utils/logger");
 
-// ============================================================
-// SECTION 1 — CONFIGURATION & LIMITS
-// ============================================================
 const CFG = {
   MIN_CONTENT_LENGTH: 150,
   AXIOS_TIMEOUT: 10_000,
@@ -22,7 +19,7 @@ const CFG = {
   MAX_EXPANSION_LINKS: 2,
   CHUNK_MIN_WORDS: 25,
   CHUNK_MAX_WORDS: 350,
-  BROWSER_IDLE_TTL_MS: 60_000, // Keep browser alive for 60s
+  BROWSER_IDLE_TTL_MS: 60_000,
 };
 
 const NOISE_SELECTORS = [
@@ -31,20 +28,13 @@ const NOISE_SELECTORS = [
   ".popup", ".modal", ".overlay", ".ad", ".ads", ".advertisement", "#cookie-banner"
 ].join(", ");
 
-// ============================================================
-// SECTION 2 — FINGERPRINT ROTATION (Bot Evasion)
-// ============================================================
 const BROWSER_PROFILES = [
   { ua: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36", vp: { width: 1920, height: 1080 } },
-  { ua: "Mozilla/5.0 (Macintosh; Intel Mac OS X 13_4) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Safari/605.1.15", vp: { width: 1440, height: 900 } },
-  { ua: "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36", vp: { width: 1366, height: 768 } }
+  { ua: "Mozilla/5.0 (Macintosh; Intel Mac OS X 13_4) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Safari/605.1.15", vp: { width: 1440, height: 900 } }
 ];
 
 function pickProfile() { return BROWSER_PROFILES[Math.floor(Math.random() * BROWSER_PROFILES.length)]; }
 
-// ============================================================
-// SECTION 3 — NATIVE RATE LIMITER
-// ============================================================
 function makeLimiter(concurrency) {
   let running = 0; const queue = [];
   const next = () => {
@@ -56,7 +46,7 @@ function makeLimiter(concurrency) {
 }
 
 const _domainLimiters = new Map();
-const _puppeteerLimiter = makeLimiter(1); // Strict 1-at-a-time for RAM safety
+const _puppeteerLimiter = makeLimiter(1);
 
 function getLimiter(url) {
   try {
@@ -66,9 +56,6 @@ function getLimiter(url) {
   } catch { return makeLimiter(CFG.CONCURRENCY_PER_DOMAIN); }
 }
 
-// ============================================================
-// SECTION 4 — SINGLETON BROWSER MANAGER
-// ============================================================
 let _browser = null;
 let _browserUsed = 0;
 
@@ -94,9 +81,6 @@ async function getBrowser() {
   return _browser;
 }
 
-// ============================================================
-// SECTION 5 — ROOT DETECTION & KNOWLEDGE GRAPH
-// ============================================================
 function findContentRoot($) {
   const candidates = ["main", "article", '[role="main"]', "#content", "#main", ".content", ".main-content"];
   for (const sel of candidates) {
@@ -120,9 +104,7 @@ function extractKnowledgeGraph($) {
   return kg;
 }
 
-// ============================================================
-// SECTION 6 — SEMANTIC CHUNKING ENGINE
-// ============================================================
+// 🔥 THE FIX: Classify & Chunking (Now allows short contact numbers!)
 function classifyBlock(text) {
   if (/(@|phone|email|address|tel:|mailto:|contact)/i.test(text)) return "CONTACT_INFO";
   if (/(we offer|services|solutions|features)/i.test(text)) return "SERVICE_DESCRIPTION";
@@ -133,28 +115,37 @@ function classifyBlock(text) {
 function semanticChunk(text) {
   const raw = text.split(/\n\s*\n+/).map(b => b.trim()).filter(Boolean);
   const chunks = []; 
-  let buffer = "", role = null;
+  let buffer = "", bufRole = null;
   
   const flush = () => {
     if (!buffer.trim()) return;
     const wc = buffer.split(/\s+/).length;
-    if (wc >= CFG.CHUNK_MIN_WORDS) chunks.push({ role: role || "GENERAL_CONTENT", text: buffer.trim(), wordCount: wc, chunkIndex: chunks.length });
-    buffer = ""; role = null;
+    
+    // 🔥 THE FIX: If it's important, skip the 25-word minimum rule!
+    const isImportant = bufRole === "CONTACT_INFO" || bufRole === "SERVICE_DESCRIPTION" || bufRole === "PRODUCT_DETAIL";
+    
+    if (wc >= CFG.CHUNK_MIN_WORDS || isImportant) { 
+        chunks.push({ 
+            role: bufRole || "GENERAL_CONTENT", 
+            text: buffer.trim(), 
+            wordCount: wc, 
+            chunkIndex: chunks.length 
+        }); 
+    }
+    buffer = ""; bufRole = null;
   };
 
   for (const b of raw) {
-    const currentRole = classifyBlock(b);
-    if ((role && currentRole !== role) || (buffer.split(/\s+/).length > CFG.CHUNK_MAX_WORDS)) flush();
+    const role = classifyBlock(b);
+    const wc = b.split(/\s+/).length;
+    if ((bufRole && role !== bufRole) || (buffer.split(/\s+/).length + wc > CFG.CHUNK_MAX_WORDS)) flush();
     buffer += (buffer ? "\n\n" : "") + b;
-    role = currentRole;
+    bufRole = role;
   }
   flush();
   return chunks;
 }
 
-// ============================================================
-// SECTION 7 — SANITIZATION & CONTACT EXTRACTION
-// ============================================================
 function extractContactInfo($) {
   const phones = new Set(), emails = new Set(), addresses = new Set();
   $("a[href^='tel:']").each((_, el) => { const t = $(el).text().trim(); if (t) phones.add(t); });
@@ -173,9 +164,6 @@ function extractContactInfo($) {
   return lines.join("\n");
 }
 
-// ============================================================
-// SECTION 8 — GOD-TIER MARKDOWN CONVERSION
-// ============================================================
 function convertTableToMarkdown($, tableEl) {
   const rows = [];
   $(tableEl).find("tr").each((_, tr) => {
@@ -203,9 +191,6 @@ function extractMarkdown($, root) {
   return md.trim();
 }
 
-// ============================================================
-// SECTION 9 — HTML PARSER
-// ============================================================
 function parseHtml(html) {
   const $ = cheerio.load(html);
   const title = $("title").text().trim() || "Web Page";
@@ -217,9 +202,6 @@ function parseHtml(html) {
   return { title, content: fullText, chunks: semanticChunk(fullText), knowledgeGraph: extractKnowledgeGraph($) };
 }
 
-// ============================================================
-// SECTION 10 — NETWORK TIERS
-// ============================================================
 async function scrapeWithAxios(url) {
   const response = await axios.get(url, { timeout: CFG.AXIOS_TIMEOUT, headers: { "User-Agent": pickProfile().ua }, httpsAgent: new https.Agent({ rejectUnauthorized: false }) });
   return parseHtml(response.data);
@@ -255,9 +237,7 @@ function findExpansionLinks($, baseUrl) {
   return [...new Set(links)].slice(0, CFG.MAX_EXPANSION_LINKS);
 }
 
-// ============================================================
-// SECTION 11 — MAIN EXPORT (Aggressive Escalation)
-// ============================================================
+// 🔥 AGGRESSIVE ESCALATION
 async function scrapeUrl(url) {
   const limiter = getLimiter(url);
   let result = null;
@@ -279,7 +259,6 @@ async function scrapeUrl(url) {
     if (result.content.length < CFG.MIN_CONTENT_LENGTH) throw new Error("Scrape failed: Content too thin.");
   }
 
-  // Tier 3: Expansion
   try {
     const raw = await axios.get(url, { timeout: 5000, httpsAgent: new https.Agent({ rejectUnauthorized: false }) }).then(r => r.data).catch(() => null);
     if (raw) {
