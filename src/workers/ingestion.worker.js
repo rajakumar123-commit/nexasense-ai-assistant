@@ -1,8 +1,10 @@
 // ============================================================
-// Ingestion Worker — NexaSense AI V5.1 God Tier
+// Ingestion Worker — NexaSense AI V7.0 God Tier
 // FIX 1: role column now saved to PostgreSQL chunks table
 // FIX 2: semantic chunks used directly (no re-chunking loss)
 // FIX 3: metadata.role set correctly for pipeline boost
+// V7.0: Metadata baking — heading/doc/page injected into chunk text
+//        so vector model embeds full context, not just raw content
 // ============================================================
 
 require("dotenv").config();
@@ -130,16 +132,46 @@ const ingestionWorker = new Worker(
         logger.info(`[Worker] Using ${chunks.length} semantic chunks (roles: ${[...new Set(chunks.map(c => c.role))].join(", ")})`);
 
       } else {
-        // File logic: recursive overlapping chunks
-        const rawChunks = recursiveChunk(text);
-        chunks = rawChunks.map((content, index) => ({
-          content,
-          chunk_index : index,
-          role        : "GENERAL_CONTENT",
-          metadata    : { page: pageCount > 1 ? "multi-page" : 1 },
-        }));
+        // ✅ V8.0: State-of-the-Art "Small-to-Big" Retrieval chunking.
+        // Tiny chunks (800 chars) create ultra-sharp embedding vectors matching query intents perfectly.
+        // We don't lose reading context because pipeline runs Parent-Doc Expansion
+        // to stitch ±5 neighbors back together during retrieval.
+        const rawChunks = recursiveChunk(text, 800, 200);
+        const docName   = filePath ? path.basename(filePath, path.extname(filePath)) : "Document";
 
-        logger.info(`[Worker] Using ${chunks.length} recursive chunks`);
+        chunks = rawChunks.map((content, index) => {
+          const heading = extractNearestHeading(content);
+          const role    = detectChunkRole(content);
+
+          // ✅ V7.0: Metadata Overloading
+          // Bake context tags INTO the chunk text so the embedding model
+          // physically "sees" the document name, heading, and page number.
+          // Without this, "Semester VI" heading might be in chunk 10 but
+          // the vector query hits chunk 11 (data rows) — the LLM never
+          // sees the heading label.
+          const contextPrefix = [
+            `[Document: ${docName}]`,
+            heading ? `[Section: ${heading}]` : null,
+            `[Page: ${pageCount > 1 ? "multi-page" : 1}]`,
+          ].filter(Boolean).join(" ");
+
+          const enrichedContent = `${contextPrefix}\n\n${content}`;
+
+          return {
+            content     : enrichedContent,          // ⬆️ Embedded text (context-rich)
+            chunk_index : index,
+            role,
+            metadata    : {
+              page            : pageCount > 1 ? "multi-page" : 1,
+              heading,
+              words           : content.split(/\s+/).length,
+              originalContent : content,             // ⬆️ Preserved for clean UI display
+              docName,
+            },
+          };
+        });
+
+        logger.info(`[Worker] Using ${chunks.length} Metadata-Enriched PDF chunks (roles: ${[...new Set(chunks.map(c => c.role))].join(", ")})`);
       }
 
       if (!chunks.length) {
@@ -258,5 +290,122 @@ ingestionWorker.on("error", err => {
   }
   logger.error("[Worker] Worker error:", err.message);
 });
+
+// ─────────────────────────────────────────────────────────────
+// HELPER FUNCTIONS — V7.0 Universal (Academic + Technical)
+// Works for ANY document type: ML papers, textbooks, manuals,
+// API docs, legal docs, syllabi, etc.
+// ─────────────────────────────────────────────────────────────
+
+/**
+ * Universal heading detector:
+ * Handles Markdown (# / ##), ALL-CAPS, academic keywords,
+ * AND technical numbered headings ("3.1 Types of Algorithms")
+ */
+function extractNearestHeading(text) {
+  const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
+
+  for (const line of lines) {
+    if (line.length < 5 || line.length > 130) continue;
+
+    // 1. Markdown heading (# ## ###)
+    if (/^#{1,4}\s/.test(line)) {
+      return line.replace(/^#+\s*/, '').trim();
+    }
+
+    // 2. Numbered section heading  e.g. "3.1 Types of Machine Learning"
+    //    "1. Introduction", "2.3.1 Support Vector Machines"
+    if (/^(\d+\.){1,4}\s*[A-Z]/.test(line) || /^\d+\.\s+\w/.test(line)) {
+      // Exclude lines that look like lists ("1. item") not headings
+      if (line.split(/\s+/).length >= 2 && line.split(/\s+/).length <= 12) {
+        return line.replace(/^[\d.]+\s*/, '').trim();
+      }
+    }
+
+    // 3. ALL-CAPS heading (4+ chars, no period mid-line → not a sentence)
+    if (
+      /^[A-Z][A-Z\s\d\-–:]{4,}$/.test(line) &&
+      !line.includes('.') &&
+      line.split(/\s+/).length <= 8
+    ) {
+      return line.trim();
+    }
+
+    // 4. Academic/technical heading keywords
+    if (/^(Chapter|Section|Article|Part|Semester|Unit|Module|Appendix|Introduction|Conclusion|Abstract|Overview|Summary|Background|Methodology|Results|Discussion|References|Algorithm|Definition|Theorem|Proof|Example|Exercise|Problem|Solution)\s+/i.test(line)) {
+      return line.trim();
+    }
+
+    // 5. Title-Case short line (2–8 words, no punctuation at end = heading)
+    if (
+      line.split(/\s+/).length >= 2 &&
+      line.split(/\s+/).length <= 8 &&
+      /^[A-Z]/.test(line) &&
+      !/[.?!,;:]$/.test(line) &&
+      /^([A-Z][a-z]+\s+){1,7}[A-Z]?[a-z]*$/.test(line)
+    ) {
+      return line.trim();
+    }
+  }
+
+  return null;
+}
+
+/**
+ * Universal chunk role detector:
+ * Covers academic syllabus roles AND technical document roles.
+ * Roles are used for category boosting in retrieval.pipeline.js.
+ */
+function detectChunkRole(text) {
+  // ── Academic Roles (existing) ─────────────────────
+  if (/Course Title|Course Objective|Course Outcome|CO Statement/i.test(text))
+    return "COURSE_CONTENT";
+  if (/Semester\s*[:\-–]\s*(I|II|III|IV|V|VI|VII|VIII)/i.test(text))
+    return "SEMESTER_SECTION";
+  if (/\bLab\b|Practical|Sessional/i.test(text))
+    return "PRACTICAL";
+  if (/\bElective\b/i.test(text))
+    return "ELECTIVE";
+
+  // ── Technical / ML Roles (V7.0) ──────────────────
+
+  // Definition block  ("X is defined as...", "Definition:", "formally:")
+  if (/\bDefinition\b|\bis\s+defined\s+as\b|\bformally\s*,|\bdenoted\s+by\b|\bis\s+a\s+(?:type|kind|form)\s+of\b/i.test(text))
+    return "DEFINITION";
+
+  // Algorithm / procedure block
+  if (/\bAlgorithm\b|\bPseudocode\b|\bstep\s+\d+\b|\bInput:|\bOutput:|\bProcedure:|\bFunction:|BEGIN\s*\n|END\s*\n/i.test(text))
+    return "ALGORITHM";
+
+  // Code block (detected by indentation patterns or code keywords)
+  if (/```[\s\S]*```|\bdef\s+\w+\s*\(|\bclass\s+\w+|\bimport\s+\w+|\bfunction\s+\w+\s*\(|\bvoid\s+\w+\s*\(/m.test(text))
+    return "CODE_BLOCK";
+
+  // Formula / equation heavy
+  if (/(\\[a-zA-Z]+\{|\\frac|\\sum|\\int|\\prod|\\sigma|[=\u2208\u2207\u03a3\u03c3\u03bc].*[=\u2208\u2207\u03a3]+|\d+\.\d+\s*[\+\-\*\/]\s*\d)/m.test(text))
+    return "FORMULA";
+
+  // Table data (pipe chars or structured grid)
+  if (/\|.+\|.+\|/m.test(text) || /[-+]{3,}/.test(text))
+    return "TABLE_DATA";
+
+  // Example / case study
+  if (/\bExample\b|\bCase Study\b|\bIllustration\b|\bFor instance\b|\bConsider\b|\be\.g\.\b/i.test(text))
+    return "EXAMPLE";
+
+  // Overview / introduction / conclusion
+  if (/\bIntroduction\b|\bOverview\b|\bBackground\b|\bMotivation\b|\bIn this chapter\b|\bIn this section\b/i.test(text))
+    return "OVERVIEW";
+
+  // Contact / metadata
+  if (/phone|mobile|email|address|contact|location|whatsapp/i.test(text))
+    return "CONTACT_INFO";
+
+  // FAQ
+  if (/\bFAQ\b|\bFrequently Asked\b|\bQ:\s|\bA:\s/i.test(text))
+    return "FAQ";
+
+  return "GENERAL_CONTENT";
+}
 
 module.exports = ingestionWorker;

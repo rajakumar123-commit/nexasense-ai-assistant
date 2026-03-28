@@ -162,7 +162,7 @@ async function streamQuery(req, res) {
       confidence:      result.confidence     ?? null,
       chunksRetrieved: result.chunksRetrieved,
       chunksUsed:      result.chunksUsed,
-      responseTimeMs:  result.responseTimeMs,
+      responseTimeMs:  Date.now() - start,
       tokenEstimate:   result.tokenEstimate,
       fromCache:       result.fromCache      || false,
       conversationId:  convId,

@@ -1,7 +1,7 @@
 // ============================================================
-// retrieval.pipeline.js — NexaSense AI V5.1 Enterprise
+// retrieval.pipeline.js — NexaSense AI V7.0 God Tier
 //
-// WHAT'S NEW vs your previous version:
+// WHAT'S NEW vs V5.1:
 //   ✅ Semantic cache checked BEFORE exact cache (saves Groq call)
 //   ✅ Category boost reads metadata.role (was broken — never fired)
 //   ✅ Sources category reads metadata.role (was always "GENERAL")
@@ -14,14 +14,21 @@
 //   ✅ HYDE query used for vector search (was ignored)
 //   ✅ Global (all-docs) search properly deduplicated across documents
 //   ✅ Graceful degradation — every step has isolated try/catch
-//   ✅ Structured logging at every step with ms timings
 //   ✅ TRUE STREAMING: Added onToken hook and generateAnswerStream
+//   ✅ V7.0: Reciprocal Rank Fusion (replaces flatten+sort)
+//   ✅ V7.0: Parent-Document retrieval (±2 neighbor chunks)
+//   ✅ V7.0: Global keyword search fix (passes userId)
 // ============================================================
 
 "use strict";
 
 const { searchDocument, searchUserDocuments }  = require("../services/vectorSearch.service");
-const { keywordSearch }                        = require("../services/keywordSearch.service");
+const {
+  keywordSearch,
+  wordLevelSearch,
+  getDocumentChunkCount,
+  getAllDocumentChunks,
+}                                              = require("../services/keywordSearch.service");
 const { rerankChunks }                         = require("../services/reranker.service");
 const { processQueryWithGroq }                 = require("../services/queryRewrite.service");
 // ✅ ADDED: generateAnswerStream
@@ -34,22 +41,31 @@ const { getCachedResult, storeCachedResult }   = require("../cache/queryCache");
 const { getSemanticCache, storeSemanticCache } = require("../cache/semanticCache");
 const { normalizeQuery }                       = require("../services/queryNormalizer.service");
 const { recordQueryMetrics }                   = require("../services/metrics.service");
+// ✅ V7.0 NEW SERVICES
+const { applyRRF }                             = require("../services/rrf.service");
+const { expandWithParentChunks }               = require("../services/parentDocument.service");
 const logger                                   = require("../utils/logger");
 
 // ─────────────────────────────────────────────────────────────
 // SECTION 1 — CONFIGURATION
 // ─────────────────────────────────────────────────────────────
 
+// Configuration
 const CFG = {
-  VECTOR_K               : 8,     // ✅ RAISED: fetch more candidates
-  KEYWORD_K              : 3,     // ✅ RAISED: more keyword hits
-  MIN_SIMILARITY         : 0.35,  // ✅ LOWERED: was 0.45 — stops false fallbacks
-  PRE_RERANK_POOL        : 35,    // ✅ RAISED: wider candidate pool
-  RERANK_THRESHOLD       : 0.35,  // ✅ LOWERED: aligned with MIN_SIMILARITY
-  RERANK_FLOOR           : 4,     // ✅ RAISED: always keep at least 4 chunks
-  MAX_FINAL_CHUNKS       : 10,    // ✅ RAISED: more context for long lists
-  REFLECTION_MIN_CONF    : 0.20,  // ✅ LOWERED: less false ⚠️ warnings
-  CATEGORY_BOOST         : 0.15,  // similarity boost for role match
+  VECTOR_K               : 15,    // ✅ Wide context fetch for loose tables
+  KEYWORD_K              : 8,     // ✅ Catch headers accurately
+  MIN_SIMILARITY         : 0.30,  // ✅ Low enough for structurally separated tables
+  PRE_RERANK_POOL        : 60,    // ✅ Wide candidate pool before MMR filters
+  RERANK_THRESHOLD       : 0.30,  // ✅ Aligned with MIN_SIMILARITY
+  RERANK_FLOOR           : 6,     // ✅ Always keep at least 6 chunks
+  MAX_FINAL_CHUNKS       : 30,    // ✅ INCREASED: since chunk size is now 800, we can feed 30 chunks (~6k tokens) to LLM
+  GUARANTEE_MAX_CHUNKS   : 60,    // ✅ MAX limit for Complete-Doc/Pass 4 deep sweeps
+  REFLECTION_MIN_CONF    : 0.20,
+  CATEGORY_BOOST         : 0.15,
+  // V8.0 Guarantee thresholds
+  MIN_CHUNKS_GUARANTEE   : 5,     // Trigger Pass 2 if below this
+  PASS3_TRIGGER          : 3,     // Trigger Pass 3 (word-level) if still below this
+  SMALL_DOC_THRESHOLD    : 60,    // Docs with ≤ 60 chunks get complete retrieval
 };
 
 // ─────────────────────────────────────────────────────────────
@@ -59,12 +75,19 @@ const CFG = {
 // ─────────────────────────────────────────────────────────────
 
 const CATEGORY_RULES = [
+  // Contact / business
   { pattern: /phone|mobile|call|email|contact|address|reach|location|whatsapp/i, role: "CONTACT_INFO"        },
   { pattern: /service|offer|solution|feature|capability|plan|package/i,          role: "SERVICE_DESCRIPTION" },
   { pattern: /price|cost|rate|fee|charge|₹|\$|usd|specification|sku|dimension/i, role: "PRODUCT_DETAIL"      },
   { pattern: /review|testimonial|feedback|rating|star|customer said/i,           role: "TESTIMONIAL"         },
   { pattern: /faq|frequently|how do i|what is|how to|can i/i,                    role: "FAQ"                 },
   { pattern: /terms|privacy|policy|copyright|legal|disclaimer/i,                 role: "LEGAL_FOOTER"        },
+  // Technical / ML document roles (V7.0)
+  { pattern: /algorithm|pseudocode|procedure|step \d|input:|output:/i,           role: "ALGORITHM"           },
+  { pattern: /definition|defined as|formally|denoted by/i,                       role: "DEFINITION"          },
+  { pattern: /example|for instance|consider|case study|e\.g\./i,                 role: "EXAMPLE"             },
+  { pattern: /formula|equation|\\frac|\\sum|\\int|proof|theorem/i,               role: "FORMULA"             },
+  { pattern: /introduction|overview|background|motivation|abstract/i,            role: "OVERVIEW"            },
 ];
 
 function detectCategory(question) {
@@ -236,55 +259,76 @@ async function runRetrievalPipeline({ userId, documentId, question, conversation
 
     // ✅ WEAK QUERY MODE: relax thresholds so vague queries still find content
     const effectiveMinSimilarity = isWeakQuery ? Math.min(CFG.MIN_SIMILARITY, 0.25) : CFG.MIN_SIMILARITY;
-    const effectiveVectorK       = isWeakQuery ? Math.max(CFG.VECTOR_K, 12)        : CFG.VECTOR_K;
-    const effectivePool          = isWeakQuery ? Math.max(CFG.PRE_RERANK_POOL, 50) : CFG.PRE_RERANK_POOL;
+    const effectiveVectorK       = isWeakQuery ? Math.max(CFG.VECTOR_K, 25)        : CFG.VECTOR_K;
+    const effectivePool          = isWeakQuery ? Math.max(CFG.PRE_RERANK_POOL, 80) : CFG.PRE_RERANK_POOL;
 
     if (isWeakQuery) {
       logger.info(`[Pipeline] Weak query mode: similarity>=${effectiveMinSimilarity} K=${effectiveVectorK} pool=${effectivePool}`);
     }
 
-    // Build query set: standalone + expansions + HYDE
-    const querySet = [
+    // ── V8.0: TRUE HyDE (Hypothetical Document Embeddings) ──
+    // Keyword queries need exact phrasing (no paragraphs)
+    const keywordQuerySet = [
       ...new Set([
         groqResult.standaloneQuery,
         ...groqResult.searchQueries,
-        groqResult.hypotheticalDocument,
       ]),
     ].filter(Boolean);
+
+    // Vector queries include the AI's "ideal fake answer" 
+    // The vector DB will mathematically hunt for chunks shaped exactly like this ideal answer.
+    const vectorQuerySet = [...keywordQuerySet];
+    if (groqResult.hypotheticalDocument) {
+      vectorQuerySet.push(groqResult.hypotheticalDocument);
+    }
 
     // Category detection — used for boost + query hint
     const detectedRole = detectCategory(question);
     if (detectedRole) {
-      querySet.push(detectedRole);
+      keywordQuerySet.push(detectedRole);
+      vectorQuerySet.push(detectedRole);
       logger.debug(`[Pipeline] Category detected: ${detectedRole}`);
     }
 
-    logger.debug(`[Pipeline] Queries (${querySet.length}): ${querySet.map(q => `"${q.slice(0,30)}"`).join(", ")}`);
+    logger.debug(`[Pipeline] Vector Queries (${vectorQuerySet.length}): ${vectorQuerySet.map(q => `"${q.slice(0,30)}"`).join(", ")}`);
+    logger.debug(`[Pipeline] Keyword Queries (${keywordQuerySet.length}): ${keywordQuerySet.map(q => `"${q.slice(0,30)}"`).join(", ")}`);
 
     // ── STEP 5: Hybrid retrieval ─────────────────────────────
     const t5       = timer();
     const isGlobal = userId && documentId === "all";
+    
+    // Fetch document size early for large-doc heuristics
+    let docChunkCount = null;
+    if (!isGlobal && documentId) {
+      try {
+        docChunkCount = await getDocumentChunkCount(documentId);
+        logger.info(`[Pipeline] Target document has ${docChunkCount} total chunks`);
+      } catch (e) {
+        logger.warn("[Pipeline] Failed to fetch docChunkCount:", e.message);
+      }
+    }
 
-    logger.info(`[Pipeline] Step 5: Hybrid retrieval | ${querySet.length} queries | global:${isGlobal}`);
+    logger.info(`[Pipeline] Step 5: Hybrid retrieval | V:${vectorQuerySet.length} K:${keywordQuerySet.length} queries | global:${isGlobal}`);
 
     const [vectorResults, keywordResults] = await Promise.all([
 
-      // Vector search — all queries in parallel with effective K
+      // Vector search — all queries (including HyDE) in parallel with effective K
       Promise.all(
-        querySet.map(q =>
+        vectorQuerySet.map(q =>
           isGlobal
             ? searchUserDocuments(userId, q, effectiveVectorK).catch(() => [])
             : searchDocument(documentId, q, effectiveVectorK).catch(() => [])
         )
       ),
 
-      // Keyword search — all queries in parallel
+      // ✅ V8.0: Keyword search excludes HyDE paragraph to prevent SQL AND-logic failures
       Promise.all(
-        querySet.map(q =>
+        keywordQuerySet.map(q =>
           keywordSearch(
             isGlobal ? null : documentId,
             q,
-            CFG.KEYWORD_K
+            CFG.KEYWORD_K,
+            isGlobal ? userId : null
           ).catch(() => [])
         )
       ),
@@ -294,16 +338,161 @@ async function runRetrievalPipeline({ userId, documentId, question, conversation
     latency.vector  = t5();
     latency.keyword = t5(); // keyword runs in same Promise.all — approximate
 
-    const rawChunks = dedupe([
-      ...vectorResults.flat(),
-      ...keywordResults.flat(),
-    ]);
+    // ✅ V7.0: Reciprocal Rank Fusion — replaces naive flatten+sort.
+    const flatVector  = vectorResults.flat();
+    const flatKeyword = keywordResults.flat();
 
-    logger.info(`[Pipeline] Retrieved ${rawChunks.length} unique chunks before filtering`);
+    const rawChunks = dedupe(applyRRF(flatVector, flatKeyword));
+
+    logger.info(`[Pipeline] RRF: ${flatVector.length} vector + ${flatKeyword.length} keyword → ${rawChunks.length} fused unique chunks`);
+
+    // ────────────────────────────────────────────────────────────
+    // ✅ V7.0: MULTI-PASS GUARANTEE RETRIEVAL
+    //
+    // If Pass 1 returned < MIN_CHUNKS_GUARANTEE results:
+    //   → Run Pass 2 with MUCH lower similarity threshold (0.15)
+    //     and higher K (30) using just the raw normalised question.
+    //
+    // This is the "agar doc mein hai toh zaroor milega" guarantee.
+    // It ensures a missed answer due to threshold cutoffs is always
+    // caught before we resort to the general knowledge fallback.
+    // ────────────────────────────────────────────────────────────
+
+    // ────────────────────────────────────────────────────────────
+    // V8.0 MULTI-PASS GUARANTEE SYSTEM
+    //
+    // Pass 1 (above): Full RRF hybrid retrieval
+    // Pass 2 (below): Wide K=30, single simple query  
+    // Pass 3 (below): Word-level OR sweep — each word searched separately
+    // Complete-Doc:   If doc ≤ 60 chunks, retrieve ALL of them
+    //
+    // The only way something in the doc is missed:
+    //   - The chunk text is completely unrelated to any word in the query
+    //   - This is impossible if the user asks about something real in the doc
+    // ────────────────────────────────────────────────────────────
+
+    const MIN_CHUNKS_GUARANTEE = CFG.MIN_CHUNKS_GUARANTEE;
+    let guaranteeChunks = [];
+
+    // ══ PASS 2: Wide search with simpler query ══
+    if (rawChunks.length < MIN_CHUNKS_GUARANTEE) {
+      logger.info(`[Pipeline] ⚠️ Pass 1: ${rawChunks.length} chunks — triggering Pass 2 guarantee`);
+
+      try {
+        const PASS2_K = 30;
+        const simpleQuery = groqResult.standaloneQuery || question;
+
+        const [v2, k2] = await Promise.all([
+          (isGlobal
+            ? searchUserDocuments(userId, simpleQuery, PASS2_K)
+            : searchDocument(documentId, simpleQuery, PASS2_K)
+          ).catch(() => []),
+          keywordSearch(
+            isGlobal ? null : documentId,
+            simpleQuery, PASS2_K,
+            isGlobal ? userId : null
+          ).catch(() => []),
+        ]);
+
+        guaranteeChunks = dedupe(applyRRF(v2, k2));
+        logger.info(`[Pipeline] Pass 2 result: ${guaranteeChunks.length} chunks`);
+
+      } catch (p2Err) {
+        logger.warn("[Pipeline] Pass 2 failed:", p2Err.message);
+      }
+    }
+
+    // Merge Pass 1 + Pass 2
+    let mergedPassChunks = rawChunks.length >= MIN_CHUNKS_GUARANTEE
+      ? rawChunks
+      : dedupe([...rawChunks, ...guaranteeChunks]);
+
+    // ══ PASS 3: Word-level OR sweep ══
+    // Triggers when Pass 1 + Pass 2 combined is still very low.
+    // Searches each meaningful word in the query SEPARATELY via ILIKE.
+    // Catches: "termination clause" when doc says "termination of employment"
+    // Catches: "types of algorithms" when doc lists "supervised learning"
+    if (mergedPassChunks.length < CFG.PASS3_TRIGGER && !isGlobal) {
+      logger.info(`[Pipeline] ⚠️ Pass 2 still only ${mergedPassChunks.length} chunks — triggering Pass 3 word-level sweep`);
+
+      try {
+        const wordChunks = await wordLevelSearch(
+          documentId,
+          groqResult.standaloneQuery || question,
+          8,           // 8 results per word
+          null
+        );
+
+        if (wordChunks.length > 0) {
+          mergedPassChunks = dedupe([...mergedPassChunks, ...wordChunks]);
+          logger.info(`[Pipeline] Pass 3 added ${wordChunks.length} word-level chunks → total: ${mergedPassChunks.length}`);
+        }
+      } catch (p3Err) {
+        logger.warn("[Pipeline] Pass 3 failed:", p3Err.message);
+      }
+    }
+
+    // ══ COMPLETE-DOC RETRIEVAL (small documents only) ══
+    if (!isGlobal && mergedPassChunks.length < CFG.PASS3_TRIGGER) {
+      logger.info(`[Pipeline] ⭐ Still only ${mergedPassChunks.length} chunks — checking fallback strategies`);
+
+      try {
+        const chunkCount = docChunkCount || 9999; // Assume large if unknown
+
+        if (chunkCount > 0 && chunkCount <= CFG.SMALL_DOC_THRESHOLD) {
+          const allChunks = await getAllDocumentChunks(documentId, CFG.SMALL_DOC_THRESHOLD);
+          if (allChunks.length > 0) {
+            mergedPassChunks = dedupe([...mergedPassChunks, ...allChunks]);
+            logger.info(`[Pipeline] ✅ Complete-doc retrieval: loaded ALL ${allChunks.length} chunks`);
+          }
+        } else if (chunkCount > CFG.SMALL_DOC_THRESHOLD) {
+          logger.info(`[Pipeline] Doc too large (${chunkCount} chunks) for complete retrieval — triggering Pass 4 Deep High-Recall Sweep`);
+          
+          const limitPerWord = Math.min(50, Math.ceil(chunkCount * 0.05));
+          
+          const deepWordChunks = await wordLevelSearch(
+            documentId,
+            groqResult.standaloneQuery || question,
+            limitPerWord,
+            null
+          );
+
+          if (deepWordChunks.length > 0) {
+            mergedPassChunks = dedupe([...mergedPassChunks, ...deepWordChunks]);
+            logger.info(`[Pipeline] Pass 4 Deep Sweep: loaded ${deepWordChunks.length} chunks at ${limitPerWord} limit/word`);
+          } else {
+            logger.info(`[Pipeline] Pass 4 yielded no new chunks.`);
+          }
+        }
+      } catch (cdErr) {
+        logger.warn("[Pipeline] Complete-doc retrieval failed:", cdErr.message);
+      }
+    }
+
+    // ✅ V7.0/V8.0: Parent-Document expansion.
+    // If it's a huge doc (>60 chunks), we aggressively expand ±5 neighbors
+    // to catch massively disjointed tables and long continuous sections.
+    let expandedChunks;
+    try {
+      // Use docChunkCount to determine neighbor expansion size
+      const neighborCount = (docChunkCount !== null && docChunkCount > CFG.SMALL_DOC_THRESHOLD) ? 5 : 2;
+
+      expandedChunks = await expandWithParentChunks(
+        mergedPassChunks,
+        isGlobal ? null : documentId,
+        neighborCount  // ±5 or ±2 neighbors
+      );
+    } catch (expandErr) {
+      logger.warn("[Pipeline] Parent-doc expansion failed — using merged pass result:", expandErr.message);
+      expandedChunks = mergedPassChunks;  // ⬆️ fallback to mergedPassChunks
+    }
+
+    // Re-deduplicate after expansion (neighbors may overlap across hits)
+    const mergedChunks = dedupe(expandedChunks);
 
     // ── STEP 6: Category boost + similarity filter ───────────
     // Boost reads metadata.role — set correctly by ingestion worker V5.1
-    let chunks = rawChunks.map(c => {
+    let chunks = mergedChunks.map(c => {
       if (detectedRole && getChunkRole(c) === detectedRole) {
         return { ...c, similarity: (c.similarity || 0) + CFG.CATEGORY_BOOST };
       }
@@ -319,12 +508,11 @@ async function runRetrievalPipeline({ userId, documentId, question, conversation
     }
 
     chunks = chunks
-      .filter(c => (c.similarity || 0) > effectiveMinSimilarity)
       .sort((a, b) => (b.similarity || 0) - (a.similarity || 0))
       .slice(0, effectivePool);
 
     chunksRetrieved = chunks.length;
-    logger.info(`[Pipeline] ${chunksRetrieved} chunks after similarity filter (threshold: ${effectiveMinSimilarity})`);
+    logger.info(`[Pipeline] ${chunksRetrieved} chunks sent to reranker (pool: ${effectivePool}, including ${mergedChunks.length - rawChunks.length} neighbor chunks)`);
 
     // ── STEP 7: No-content fallback ──────────────────────────
     if (!chunksRetrieved) {
@@ -347,12 +535,20 @@ async function runRetrievalPipeline({ userId, documentId, question, conversation
         finalChunks = reranked.slice(0, CFG.RERANK_FLOOR);
       }
 
-      finalChunks = finalChunks.slice(0, CFG.MAX_FINAL_CHUNKS);
+      // If any chunk has the completeDoc flag, allow a much larger LLM payload
+      const hasCompleteDoc = chunks.some(c => c.metadata?.completeDoc);
+      const limit = hasCompleteDoc ? CFG.GUARANTEE_MAX_CHUNKS : CFG.MAX_FINAL_CHUNKS;
+
+      finalChunks = finalChunks.slice(0, limit);
 
     } catch (rerankErr) {
       logger.warn("[Pipeline] Reranker failed — using pre-rerank order:", rerankErr.message);
       latency.rerank = t8();
-      finalChunks    = chunks.slice(0, CFG.MAX_FINAL_CHUNKS);
+      
+      const hasCompleteDoc = chunks.some(c => c.metadata?.completeDoc);
+      const limit = hasCompleteDoc ? CFG.GUARANTEE_MAX_CHUNKS : CFG.MAX_FINAL_CHUNKS;
+      
+      finalChunks = chunks.slice(0, limit);
     }
 
     logger.info(`[Pipeline] ${finalChunks.length} chunks after reranking`);

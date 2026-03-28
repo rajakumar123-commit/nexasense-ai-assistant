@@ -10,13 +10,13 @@
 // ============================================================
 
 /**
- * Main entry point.
+ * Recursive chunker designed for Small-to-Big Architecture.
  * @param {string}  text       - Full extracted document text
- * @param {number}  chunkSize  - Max characters per chunk (default 800)
- * @param {number}  overlap    - Overlap chars between consecutive chunks (default 250)
+ * @param {number}  chunkSize  - Max characters per chunk (default 800 for sharp vectors)
+ * @param {number}  overlap    - Overlap chars between consecutive chunks (default 200)
  * @returns {string[]}         - Array of clean, overlap-applied text chunks
  */
-function recursiveChunk(text, chunkSize = 800, overlap = 250) {
+function recursiveChunk(text, chunkSize = 800, overlap = 200) {
 
   if (!text || typeof text !== "string") return [];
 
@@ -76,11 +76,20 @@ function extractAtomicBlocks(text) {
   const lines = text.split("\n");
   const blocks = [];
   let currentGroup = [];
-  let currentType = null; // "table" | "list" | "prose"
+  let currentType = null; // "table" | "list" | "prose" | "heading"
+  let lastHeading = "";
 
   function flushGroup() {
     if (currentGroup.length > 0) {
-      blocks.push({ type: currentType, text: currentGroup.join("\n").trim() });
+      let blockText = currentGroup.join("\n").trim();
+      
+      // Context Enhancement: Prepend section heading to loosely coupled blocks (Tables & Lists)
+      if (lastHeading && currentType === "table") {
+         // Prevents LLM dropping context when tables span multiple chunks
+         blockText = `[Section Context: ${lastHeading}]\n` + blockText;
+      }
+      
+      blocks.push({ type: currentType, text: blockText });
       currentGroup = [];
       currentType = null;
     }
@@ -92,7 +101,13 @@ function extractAtomicBlocks(text) {
     const isHeading = HEADING.test(line);
     const isEmpty   = line.trim().length === 0;
 
-    if (isTable) {
+    if (isHeading) {
+      flushGroup();
+      lastHeading = line.replace(/^#{1,6}\s*/, "").trim();
+      currentType = "heading";
+      currentGroup.push(line);
+
+    } else if (isTable) {
       if (currentType !== "table") {
         flushGroup();
         currentType = "table";
@@ -106,19 +121,13 @@ function extractAtomicBlocks(text) {
       }
       currentGroup.push(line);
 
-    } else if (isHeading) {
-      // Headings are prose — flush previous, start fresh
-      flushGroup();
-      currentType = "prose";
-      currentGroup.push(line);
-
     } else if (isEmpty) {
       // Blank lines are paragraph boundaries in prose
       if (currentType === "prose" && currentGroup.length > 0) {
         flushGroup();
       }
-      // For table/list, a single blank line ends the group
-      if (currentType === "table" || currentType === "list") {
+      // For table/list/heading, a single blank line ends the group
+      if (currentType === "table" || currentType === "list" || currentType === "heading") {
         flushGroup();
       }
 
@@ -149,8 +158,13 @@ function extractAtomicBlocks(text) {
 function mergeIntoChunks(blocks, chunkSize) {
   const chunks = [];
   let current = "";
+  let lastHeading = "";
 
   for (const block of blocks) {
+    if (block.type === "heading") {
+      lastHeading = block.text.replace(/^#+\s*/, "").trim();
+    }
+
     const separator = current.length > 0 ? "\n\n" : "";
     const candidate = current + separator + block.text;
 
@@ -162,10 +176,18 @@ function mergeIntoChunks(blocks, chunkSize) {
         chunks.push(current.trim());
       }
 
-      // If the block itself is larger than chunkSize, hard-split it
+      // If the block itself is larger than chunkSize, safely split it
       if (block.text.length > chunkSize) {
-        const subChunks = hardSplit(block.text, chunkSize);
-        chunks.push(...subChunks);
+        const subChunks = safeSplitBlock(block, chunkSize);
+        
+        // Context Enhancement: Prepend section heading to loosely coupled blocks
+        subChunks.forEach((sc, i) => {
+          chunks.push(
+            i === 0 || !lastHeading
+              ? sc
+              : `[Context: ${lastHeading}]\n${sc}`
+          );
+        });
         current = "";
       } else {
         current = block.text;
@@ -181,35 +203,56 @@ function mergeIntoChunks(blocks, chunkSize) {
 }
 
 /**
- * Last-resort splitting for blocks that are individually oversized.
- * Tries to split on sentence boundaries first, then hard characters.
+ * Safely splits oversized blocks based on their type.
+ * Tables/Lists are split by row (\n) so they don't break mid-sentence.
+ * Prose is split by sentence.
  */
-function hardSplit(text, chunkSize) {
+function safeSplitBlock(block, chunkSize) {
   const result = [];
+  
+  if (block.type === "table" || block.type === "list") {
+    // Split by rows, never hard-cut mid-row
+    const lines = block.text.split("\n");
+    let currentChunk = "";
+    
+    for (const line of lines) {
+       const candidate = currentChunk ? currentChunk + "\n" + line : line;
+       if (candidate.length <= chunkSize) {
+         currentChunk = candidate;
+       } else {
+         if (currentChunk.trim()) result.push(currentChunk.trim());
+         // Even if a single row is huge, we must keep it entirely together 
+         // rather than chopping it. 
+         currentChunk = line;
+       }
+    }
+    if (currentChunk.trim()) result.push(currentChunk.trim());
+    return result;
+  }
 
-  // Try sentence split first
-  const sentences = text.split(/(?<=[.!?।])\s+/);
-  let current = "";
+  // Fallback for prose: split by sentence
+  const sentences = block.text.split(/(?<=[.!?।])\s+/);
+  let currentStr = "";
 
   for (const sentence of sentences) {
-    const candidate = current ? current + " " + sentence : sentence;
+    const candidate = currentStr ? currentStr + " " + sentence : sentence;
     if (candidate.length <= chunkSize) {
-      current = candidate;
+      currentStr = candidate;
     } else {
-      if (current.trim()) result.push(current.trim());
-      // If even a single sentence is too long, hard-chop
+      if (currentStr.trim()) result.push(currentStr.trim());
+      // If a single sentence is oversized, hard-chop as last resort
       if (sentence.length > chunkSize) {
         for (let i = 0; i < sentence.length; i += chunkSize) {
           result.push(sentence.slice(i, i + chunkSize).trim());
         }
-        current = "";
+        currentStr = "";
       } else {
-        current = sentence;
+        currentStr = sentence;
       }
     }
   }
 
-  if (current.trim()) result.push(current.trim());
+  if (currentStr.trim()) result.push(currentStr.trim());
   return result;
 }
 

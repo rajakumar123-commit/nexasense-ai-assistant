@@ -29,10 +29,10 @@ function getClient() {
 }
 
 const MODEL_NAME         = "llama-3.3-70b-versatile";
-const MAX_CONTEXT_CHUNKS = 12;    // was 10
+const MAX_CONTEXT_CHUNKS = 15;    // ✅ RAISED (was 12): aligned with retrieval pipeline max
 const MAX_HISTORY_MSGS   = 6;     // was 8 — free token budget for answer
 const MAX_TOKENS         = 2400;  // was 1800 — room for complete list answers
-const MAX_CONTEXT_CHARS  = 24000; // ~6000 tokens — prevents context overflow
+const MAX_CONTEXT_CHARS  = 30000; // ✅ RAISED: fits the 15 expanded chunks
 
 // Only these status codes are worth retrying
 const RETRIABLE_STATUS = new Set([429, 500, 502, 503, 504]);
