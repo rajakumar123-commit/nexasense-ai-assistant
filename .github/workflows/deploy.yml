@@ -73,7 +73,7 @@ jobs:
           echo "=== STEP 4: Health Check ==="
           sleep 30
           $DC ps
-          curl -sf http://localhost:3000/api/health && echo "Backend healthy" || echo "Backend still starting"
+          $DC exec -T backend curl -sf http://localhost:3000/api/health && echo "Backend healthy" || echo "Backend still starting"
 
           echo "=== DEPLOY COMPLETE ==="
           ENDSSH
