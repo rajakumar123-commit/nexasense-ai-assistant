@@ -58,6 +58,13 @@ jobs:
             echo ".env exists — preserving it"
           fi
 
+          echo "=== STEP 2.5: Auto-Patching .env for HTML Uploads ==="
+          sed -i 's/VITE_ALLOWED_FILE_TYPES=.pdf,.docx,.txt/VITE_ALLOWED_FILE_TYPES=.pdf,.docx,.txt,.html/g' .env || true
+          if [ -f "frontend/.env" ]; then
+            sed -i 's/VITE_ALLOWED_FILE_TYPES=.pdf,.docx,.txt/VITE_ALLOWED_FILE_TYPES=.pdf,.docx,.txt,.html/g' frontend/.env || true
+          fi
+
+
           echo "=== STEP 3: Build and Restart ==="
           if sudo docker compose version > /dev/null 2>&1; then
             DC="sudo docker compose"
