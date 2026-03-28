@@ -39,21 +39,23 @@ async function extractText(filePath) {
     return { text, pageCount: 1, info: { method: "native" } };
   }
 
-  // ── 3. PDF with Gemini OCR Fallback ─────────────────────────
-  const dataBuffer = await fsPromises.readFile(filePath);
-  const data = await pdfParse(dataBuffer);
+  // ── 3. PDF with Native Gemini Parsing ─────────────────────────
+  if (ext === ".pdf") {
+    logger.info(`[Document Parsing] Invoking Gemini Native PDF Parsing for precise Markdown extraction...`);
 
-  // LOGIC: If text length is < 100 characters, it's almost certainly a scan or image.
-  if (!data.text || data.text.trim().length < 100) {
-    logger.info(`[OCR] Scanned PDF/Image detected. Invoking Gemini OCR...`);
-
+    let pageCount = 1;
     try {
+      // Quickly get page count using pdf-parse buffer
+      const dataBuffer = await fsPromises.readFile(filePath);
+      const data = await pdfParse(dataBuffer);
+      pageCount = data.numpages || 1;
+      
       const fileManager = new GoogleAIFileManager(process.env.GEMINI_API_KEY);
       
-      // Upload to Google (Temporary Storage)
+      // Upload to Google (Temporary Storage - auto deleted by Google after 48h)
       const uploadResult = await fileManager.uploadFile(filePath, {
         mimeType: "application/pdf",
-        displayName: "Scanned_Document_Processing",
+        displayName: "Document_Processing",
       });
 
       const model = getModel();
@@ -64,29 +66,42 @@ async function extractText(filePath) {
             fileUri: uploadResult.file.uri,
           },
         },
-        { text: "Extract all text from this document. Convert into clean Markdown. Preserve structure and tables." },
+        { text: "Extract all text from this PDF exactly as it appears. Convert tables into perfect Markdown tables (`| | |`). Convert headings into Markdown headers (`#`, `##`). Do not add any conversational filler or greetings. Just output the extracted Markdown." },
       ]);
 
-      const ocrText = result.response.text();
-      logger.info(`[OCR] Success: Extracted text from ${data.numpages} scanned pages.`);
+      const markdownText = result.response.text();
+      logger.info(`[Document Parsing] Success: Extracted pristine Markdown from ${pageCount} pages using Gemini.`);
+
+      // Optional: Slight delay to prevent hitting free-tier 15 RPM limit immediately on bulk uploads
+      await new Promise(r => setTimeout(r, 2000));
 
       return {
-        text: ocrText,
-        pageCount: data.numpages,
-        info: { ...data.info, method: "gemini-ocr" } // ✅ Tells worker OCR was used
+        text: markdownText,
+        pageCount: pageCount,
+        info: { method: "gemini-native-markdown" }
       };
-    } catch (ocrErr) {
-      logger.error(`[OCR] Gemini OCR failed: ${ocrErr.message}`);
-      throw new Error("Could not read scanned PDF. Please provide a document with selectable text.");
+
+    } catch (err) {
+      logger.warn(`[Document Parsing] Gemini API failed or rate-limited (${err.message}). Falling back to native pdf-parse...`);
+      
+      // Fallback
+      const dataBuffer = await fsPromises.readFile(filePath);
+      const data = await pdfParse(dataBuffer);
+      
+      if (!data.text || data.text.trim().length < 50) {
+        throw new Error("PDF contains no selectable text and Gemini Vision API is currently unavailable to read it.");
+      }
+      
+      return {
+        text: data.text,
+        pageCount: data.numpages,
+        info: { ...data.info, method: "native-fallback" }
+      };
     }
   }
 
-  // Default: Return native text
-  return {
-    text: data.text,
-    pageCount: data.numpages,
-    info: { ...data.info, method: "native" }
-  };
+  // Unsupported Extensions will be naturally caught before this or error out
+  throw new Error(`Unsupported file extension: ${ext}`);
 }
 
 module.exports = { extractText };

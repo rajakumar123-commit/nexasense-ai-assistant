@@ -41,14 +41,14 @@ const logger                                   = require("../utils/logger");
 // ─────────────────────────────────────────────────────────────
 
 const CFG = {
-  VECTOR_K               : 6,     // vector results per query
-  KEYWORD_K              : 2,     // keyword results per query
-  MIN_SIMILARITY         : 0.45,  // drop chunks below this score
-  PRE_RERANK_POOL        : 25,    // max chunks sent to reranker
-  RERANK_THRESHOLD       : 0.40,  // reranker score cutoff
-  RERANK_FLOOR           : 3,     // always keep at least N chunks
-  MAX_FINAL_CHUNKS       : 8,     // max chunks sent to LLM
-  REFLECTION_MIN_CONF    : 0.25,  // warn if confidence below this
+  VECTOR_K               : 8,     // ✅ RAISED: fetch more candidates
+  KEYWORD_K              : 3,     // ✅ RAISED: more keyword hits
+  MIN_SIMILARITY         : 0.35,  // ✅ LOWERED: was 0.45 — stops false fallbacks
+  PRE_RERANK_POOL        : 35,    // ✅ RAISED: wider candidate pool
+  RERANK_THRESHOLD       : 0.35,  // ✅ LOWERED: aligned with MIN_SIMILARITY
+  RERANK_FLOOR           : 4,     // ✅ RAISED: always keep at least 4 chunks
+  MAX_FINAL_CHUNKS       : 10,    // ✅ RAISED: more context for long lists
+  REFLECTION_MIN_CONF    : 0.20,  // ✅ LOWERED: less false ⚠️ warnings
   CATEGORY_BOOST         : 0.15,  // similarity boost for role match
 };
 
@@ -180,6 +180,8 @@ async function generalKnowledgeFallback({ question, chunksRetrieved, startTime, 
 
 // ✅ ADDED: onToken to signature
 async function runRetrievalPipeline({ userId, documentId, question, conversationId, onToken }) {
+  // detectedLanguage is resolved after Step 4 (query rewrite)
+  let detectedLanguage = "en";
 
   const startTime = Date.now();
   const svc       = getConvSvc();
@@ -227,20 +229,33 @@ async function runRetrievalPipeline({ userId, documentId, question, conversation
     const groqResult = await processQueryWithGroq(question, history);
     latency.rewrite  = t4();
 
+    // ✅ Extract detected language & weak query flag from query rewriter
+    detectedLanguage = groqResult.detectedLanguage || "en";
+    const isWeakQuery = groqResult.isWeakQuery === true;
+    logger.info(`[Pipeline] Detected language: ${detectedLanguage} | Weak query: ${isWeakQuery}`);
+
+    // ✅ WEAK QUERY MODE: relax thresholds so vague queries still find content
+    const effectiveMinSimilarity = isWeakQuery ? Math.min(CFG.MIN_SIMILARITY, 0.25) : CFG.MIN_SIMILARITY;
+    const effectiveVectorK       = isWeakQuery ? Math.max(CFG.VECTOR_K, 12)        : CFG.VECTOR_K;
+    const effectivePool          = isWeakQuery ? Math.max(CFG.PRE_RERANK_POOL, 50) : CFG.PRE_RERANK_POOL;
+
+    if (isWeakQuery) {
+      logger.info(`[Pipeline] Weak query mode: similarity>=${effectiveMinSimilarity} K=${effectiveVectorK} pool=${effectivePool}`);
+    }
+
     // Build query set: standalone + expansions + HYDE
-    // HYDE was previously ignored — now included for better semantic coverage
     const querySet = [
       ...new Set([
         groqResult.standaloneQuery,
         ...groqResult.searchQueries,
-        groqResult.hypotheticalDocument,  // ← HYDE added
+        groqResult.hypotheticalDocument,
       ]),
     ].filter(Boolean);
 
     // Category detection — used for boost + query hint
     const detectedRole = detectCategory(question);
     if (detectedRole) {
-      querySet.push(detectedRole); // e.g. "CONTACT_INFO" as semantic anchor
+      querySet.push(detectedRole);
       logger.debug(`[Pipeline] Category detected: ${detectedRole}`);
     }
 
@@ -254,12 +269,12 @@ async function runRetrievalPipeline({ userId, documentId, question, conversation
 
     const [vectorResults, keywordResults] = await Promise.all([
 
-      // Vector search — all queries in parallel
+      // Vector search — all queries in parallel with effective K
       Promise.all(
         querySet.map(q =>
           isGlobal
-            ? searchUserDocuments(userId, q, CFG.VECTOR_K).catch(() => [])
-            : searchDocument(documentId, q, CFG.VECTOR_K).catch(() => [])
+            ? searchUserDocuments(userId, q, effectiveVectorK).catch(() => [])
+            : searchDocument(documentId, q, effectiveVectorK).catch(() => [])
         )
       ),
 
@@ -304,12 +319,12 @@ async function runRetrievalPipeline({ userId, documentId, question, conversation
     }
 
     chunks = chunks
-      .filter(c => (c.similarity || 0) > CFG.MIN_SIMILARITY)
+      .filter(c => (c.similarity || 0) > effectiveMinSimilarity)
       .sort((a, b) => (b.similarity || 0) - (a.similarity || 0))
-      .slice(0, CFG.PRE_RERANK_POOL);
+      .slice(0, effectivePool);
 
     chunksRetrieved = chunks.length;
-    logger.info(`[Pipeline] ${chunksRetrieved} chunks after similarity filter (threshold: ${CFG.MIN_SIMILARITY})`);
+    logger.info(`[Pipeline] ${chunksRetrieved} chunks after similarity filter (threshold: ${effectiveMinSimilarity})`);
 
     // ── STEP 7: No-content fallback ──────────────────────────
     if (!chunksRetrieved) {
@@ -361,11 +376,11 @@ async function runRetrievalPipeline({ userId, documentId, question, conversation
     logger.info(`[Pipeline] Step 10: Generating answer from ${contextChunks.length} chunks`);
 
     let answer;
-    // ✅ ADDED: Route to native streaming if requested
+    // ✅ Route to streaming or standard, passing detectedLanguage
     if (onToken) {
-      answer = await generateAnswerStream(question, contextChunks, history, onToken);
+      answer = await generateAnswerStream(question, contextChunks, history, onToken, detectedLanguage);
     } else {
-      answer = await generateAnswer(question, contextChunks, history);
+      answer = await generateAnswer(question, contextChunks, history, detectedLanguage);
     }
     
     latency.llm = t10();
@@ -396,10 +411,11 @@ async function runRetrievalPipeline({ userId, documentId, question, conversation
     try {
       const sources = finalChunks.map(c => ({
         pageNumber : c.metadata?.pageNumber || null,
-        preview    : (c.content || "").slice(0, 120),
+        preview    : (c.content || "").slice(0, 150),
       }));
 
-      answer          = await applyReasoning(question, answer, sources);
+      // ✅ Pass detectedLanguage so Gemini replies in the correct language
+      answer          = await applyReasoning(question, answer, sources, detectedLanguage);
       latency.gemini  = t12();
 
     } catch (reasonErr) {

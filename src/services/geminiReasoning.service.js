@@ -1,103 +1,104 @@
 // ============================================================
-// geminiReasoning.service.js
-// NexaSense AI Assistant
-// Production-Grade Reasoning Layer (Safe + Controlled)
+// geminiReasoning.service.js — NexaSense Enterprise V2.0
+//
+// WHAT'S NEW:
+//   ✅ Accepts detectedLanguage — Gemini preserves reply language
+//   ✅ Forbidden format rules injected (no ### Answer, ### Key Points)
+//   ✅ Skips refinement for long list answers (> 2500 chars) — avoids re-formatting
+//   ✅ Skips if ragAnswer already starts with ⚠️ (fallback answers)
+//   ✅ Timeout guard preserved (30s)
 // ============================================================
 
+"use strict";
+
 const { askGemini } = require("./gemini.service");
-const logger = require("../utils/logger");
+const logger        = require("../utils/logger");
 
-const MAX_SOURCE_PREVIEW = 120;
-const MAX_REASONING_TIME = 30000; // timeout safety
+const MAX_SOURCE_PREVIEW = 150;
+const MAX_REASONING_TIME = 30_000;
+const SKIP_IF_LONGER_THAN = 2500; // skip refinement for very long list answers
 
+// ─────────────────────────────────────────────────────────────
+// Build evidence string from source previews
+// ─────────────────────────────────────────────────────────────
 
-// ------------------------------------------------------------
-// Build evidence context from retrieved sources
-// ------------------------------------------------------------
 function buildEvidence(sources = []) {
-
-  if (!sources || !sources.length) return "";
+  if (!sources || !sources.length) return "No evidence available.";
 
   try {
-
     return sources
-      .slice(0, 5) // limit evidence
+      .slice(0, 6)
       .map(s => {
-
-        const page =
-          s.pageNumber
-            ? `Page ${s.pageNumber}`
-            : "";
-
-        const preview =
-          (s.preview || "")
-            .replace(/\s+/g, " ")
-            .slice(0, MAX_SOURCE_PREVIEW);
-
-        return `${page}: ${preview}`;
-
+        const page    = s.pageNumber ? `Page ${s.pageNumber}` : "Unknown page";
+        const preview = (s.preview || "").replace(/\s+/g, " ").slice(0, MAX_SOURCE_PREVIEW);
+        return `[${page}]: ${preview}`;
       })
       .join("\n");
-
   } catch {
     return "";
   }
-
 }
 
-
-// ------------------------------------------------------------
+// ─────────────────────────────────────────────────────────────
 // Safe Gemini call with timeout
-// ------------------------------------------------------------
+// ─────────────────────────────────────────────────────────────
+
 async function callGeminiWithTimeout(prompt) {
-
   try {
-
     return await Promise.race([
       askGemini(prompt),
       new Promise((_, reject) =>
-        setTimeout(() =>
-          reject(new Error("Gemini reasoning timeout")),
-          MAX_REASONING_TIME
-        )
-      )
+        setTimeout(() => reject(new Error("Gemini reasoning timeout")), MAX_REASONING_TIME)
+      ),
     ]);
-
   } catch (error) {
-
     logger.warn("[GeminiReasoning] timeout/failure:", error.message);
     return null;
-
   }
-
 }
 
+// ─────────────────────────────────────────────────────────────
+// Language map
+// ─────────────────────────────────────────────────────────────
 
-// ------------------------------------------------------------
-// Apply reasoning (safe refinement only)
-// ------------------------------------------------------------
-async function applyReasoning(question, ragAnswer, sources = []) {
+const LANG_MAP = {
+  en: "English", hi: "Hindi", bn: "Bengali", ar: "Arabic",
+  fr: "French",  es: "Spanish", de: "German", ta: "Tamil",
+  te: "Telugu",  mr: "Marathi", gu: "Gujarati", pa: "Punjabi",
+  ur: "Urdu",    zh: "Chinese", ja: "Japanese", ko: "Korean",
+};
 
+// ─────────────────────────────────────────────────────────────
+// Main: apply reasoning refinement
+// ─────────────────────────────────────────────────────────────
+
+async function applyReasoning(question, ragAnswer, sources = [], detectedLanguage = "en") {
   try {
+    // Basic validation
+    if (!ragAnswer || typeof ragAnswer !== "string") return ragAnswer;
 
-    // basic validation
-    if (!ragAnswer || typeof ragAnswer !== "string") {
+    // Skip very short answers — no need to refine
+    if (ragAnswer.length < 40) return ragAnswer;
+
+    // Skip long list answers — Gemini tends to re-format and collapse them
+    if (ragAnswer.length > SKIP_IF_LONGER_THAN) {
+      logger.debug("[GeminiReasoning] Skipping — answer too long (list-type), preserving as-is");
       return ragAnswer;
     }
 
-    // skip very short answers (no need to refine)
-    if (ragAnswer.length < 40) {
+    // Skip fallback answers that start with ⚠️
+    if (ragAnswer.startsWith("⚠️") || ragAnswer.startsWith("I couldn't find")) {
       return ragAnswer;
     }
 
+    const langName = LANG_MAP[detectedLanguage] || detectedLanguage.toUpperCase();
     const evidence = buildEvidence(sources);
 
     const prompt = `
-You are an expert AI Reasoning Engine.
+You are a precision reasoning engine for an enterprise AI assistant.
 
-Your task is to refine and improve an answer generated by a primary RAG system.
-
-⚠️ CRITICAL: You must NOT introduce any new facts.
+Your ONLY job is to improve the clarity and structure of an existing AI answer.
+You MUST NOT add any new facts, change numbers, or introduce outside knowledge.
 
 ---
 
@@ -107,75 +108,43 @@ ${question}
 Original Answer:
 ${ragAnswer}
 
-Document Evidence:
+Supporting Evidence (from document):
 ${evidence}
 
 ---
 
-## STRICT GROUNDING
+## STRICT GROUNDING RULES
+- DO NOT add any information not present in the Original Answer or Evidence.
+- DO NOT change factual content, numbers, codes, or names.
+- DO NOT expand beyond what was already stated.
+- You are ONLY allowed to: rephrase, restructure, clarify.
 
-- You MUST NOT add new information
-- You MUST NOT assume missing details
-- You MUST NOT expand beyond given content
-- You are ONLY allowed to:
-  • rephrase
-  • restructure
-  • clarify
+## LANGUAGE RULE — CRITICAL
+- Reply ENTIRELY in ${langName}.
+- Keep technical terms, subject codes (e.g., IT601), and proper nouns in English.
 
----
-
-## EVIDENCE ALIGNMENT
-
-- Prefer Document Evidence over Original Answer when correcting inconsistencies
-- If evidence is weak or missing → DO NOT modify facts
-
----
-
-## REFINEMENT RULES
-
-1. Improve clarity and readability
-2. Use clean Markdown (bold, bullets where needed)
-3. Keep tone professional and natural
-4. Preserve any ⚠️ warning EXACTLY at the top
-5. Do NOT repeat the question
-6. Do NOT add filler text
-
----
-
-## FORMAT CONTROL
-
-- Avoid excessive bullet points
-- Keep answer smooth and readable
-- Do NOT over-format
-
----
+## FORMATTING RULES
+- Preserve existing lists and tables exactly — do NOT collapse or merge list items.
+- If the answer is a numbered/bulleted list, keep it as a list.
+- If the answer is a table, keep it as a table.
+- NEVER use "### Answer" or "### Key Points" headers.
+- NEVER add "Based on...", "According to...", or closing lines like "I hope this helps!".
+- Preserve any ⚠️ warning at the top if present.
 
 ## OUTPUT
-
-Return ONLY the final improved answer.
-`;
+Return ONLY the final refined answer. No preamble, no explanation.
+`.trim();
 
     const improved = await callGeminiWithTimeout(prompt);
 
-    // safety fallback
-    if (!improved || improved.trim().length < 10) {
-      return ragAnswer;
-    }
+    if (!improved || improved.trim().length < 10) return ragAnswer;
 
     return improved.trim();
 
   } catch (error) {
-
     logger.warn("[GeminiReasoning] skipped:", error.message);
-
-    // fallback to original answer
     return ragAnswer;
-
   }
-
 }
 
-
-module.exports = {
-  applyReasoning
-};
+module.exports = { applyReasoning };
